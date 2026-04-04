@@ -21,6 +21,15 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: url-shortener
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: url-shortener
           image: <IMAGE>
@@ -91,8 +100,8 @@ spec:
             failureThreshold: 8
           resources:
             requests:
-              cpu: 800m
-              memory: 1536Mi
+              cpu: 600m
+              memory: 1024Mi
             limits:
               cpu: "1800m"
               memory: 3584Mi
@@ -121,7 +130,7 @@ spec:
     kind: Deployment
     name: url-shortener
   minReplicas: 3
-  maxReplicas: 4
+  maxReplicas: 9
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
