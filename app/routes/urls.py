@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
+from app.database import db
 from app.models.event import Event
 from app.models.url import Url
 from app.models.user import User
@@ -48,37 +49,37 @@ def create_url():
     if errors:
         return jsonify(errors=errors), 400
 
-    try:
-        User.get_by_id(user_id)
-    except User.DoesNotExist:
+    if not User.select().where(User.id == user_id).exists():
         return jsonify(error="User not found"), 404
 
     url_entry = None
-    for _attempt in range(MAX_SHORT_CODE_ATTEMPTS):
-        try:
-            url_entry = Url.create(
-                user=user_id,
-                short_code=Url.generate_short_code(),
-                original_url=original_url.strip(),
-                title=title.strip() if isinstance(title, str) else None,
-                is_active=True,
-            )
-            break
-        except IntegrityError:
-            continue
+    with db.atomic():
+        for _attempt in range(MAX_SHORT_CODE_ATTEMPTS):
+            try:
+                with db.atomic():
+                    url_entry = Url.create(
+                        user=user_id,
+                        short_code=Url.generate_short_code(),
+                        original_url=original_url.strip(),
+                        title=title.strip() if isinstance(title, str) else None,
+                        is_active=True,
+                    )
+                break
+            except IntegrityError:
+                continue
 
-    if url_entry is None:
-        return jsonify(errors={"url": "Could not create URL"}), 503
+        if url_entry is None:
+            return jsonify(errors={"url": "Could not create URL"}), 503
 
-    Event.create_event(
-        url=url_entry,
-        user=user_id,
-        event_type="created",
-        details={
-            "short_code": url_entry.short_code,
-            "original_url": url_entry.original_url,
-        },
-    )
+        Event.create_event(
+            url=url_entry,
+            user=user_id,
+            event_type="created",
+            details={
+                "short_code": url_entry.short_code,
+                "original_url": url_entry.original_url,
+            },
+        )
 
     return jsonify(url_entry.to_dict()), 201
 
@@ -95,7 +96,7 @@ def list_urls():
             return jsonify(errors={"user_id": "user_id must be an integer"}), 400
         query = query.where(Url.user == user_id_num)
 
-    return jsonify([url_entry.to_dict() for url_entry in query])
+    return jsonify([url_entry.to_dict() for url_entry in query.iterator()])
 
 
 @urls_bp.route("/urls/<int:url_id>", methods=["GET"])
@@ -142,19 +143,20 @@ def update_url(url_id):
         url_entry.original_url = payload["original_url"].strip()
 
     url_entry.updated_at = datetime.utcnow()
-    url_entry.save()
 
-    Event.create_event(
-        url=url_entry,
-        user=_resolve_user_id(url_entry),
-        event_type="updated",
-        details={
-            "short_code": url_entry.short_code,
-            "original_url": url_entry.original_url,
-            "is_active": url_entry.is_active,
-            "title": url_entry.title,
-        },
-    )
+    with db.atomic():
+        url_entry.save()
+        Event.create_event(
+            url=url_entry,
+            user=_resolve_user_id(url_entry),
+            event_type="updated",
+            details={
+                "short_code": url_entry.short_code,
+                "original_url": url_entry.original_url,
+                "is_active": url_entry.is_active,
+                "title": url_entry.title,
+            },
+        )
 
     return jsonify(url_entry.to_dict())
 
@@ -169,16 +171,17 @@ def redirect_short_url(short_code):
     if not url_entry.is_active:
         return jsonify(error="Short URL is inactive"), 410
 
-    Event.create_event(
-        url=url_entry,
-        user=_resolve_user_id(url_entry),
-        event_type="redirected",
-        details={
-            "short_code": url_entry.short_code,
-            "original_url": url_entry.original_url,
-            "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
-            "user_agent": request.user_agent.string,
-        },
-    )
+    with db.atomic():
+        Event.create_event(
+            url=url_entry,
+            user=_resolve_user_id(url_entry),
+            event_type="redirected",
+            details={
+                "short_code": url_entry.short_code,
+                "original_url": url_entry.original_url,
+                "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
+                "user_agent": request.user_agent.string,
+            },
+        )
 
     return redirect(url_entry.original_url, code=302)

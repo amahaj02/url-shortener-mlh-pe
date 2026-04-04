@@ -9,6 +9,11 @@ from app.models.user import User
 
 
 class Url(BaseModel):
+    class Meta:
+        indexes = (
+            (("user", "id"), False),
+        )
+
     id = AutoField()
     user = ForeignKeyField(User, backref="urls", on_delete="CASCADE")
     short_code = CharField(unique=True)

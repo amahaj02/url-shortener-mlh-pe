@@ -34,3 +34,13 @@ keepalive = _int_env("GUNICORN_KEEPALIVE", 2)
 max_requests = _int_env("GUNICORN_MAX_REQUESTS", 1000)
 max_requests_jitter = _int_env("GUNICORN_MAX_REQUESTS_JITTER", 100)
 graceful_timeout = _int_env("GUNICORN_GRACEFUL_TIMEOUT", 30)
+
+# Log to stdout/stderr so Kubernetes log aggregation (kubectl logs) shows requests + errors.
+accesslog = os.getenv("GUNICORN_ACCESS_LOG", "-")
+errorlog = os.getenv("GUNICORN_ERROR_LOG", "-")
+loglevel = os.getenv("GUNICORN_LOG_LEVEL", "info")
+# %(D)s = request duration in microseconds (useful for tail latency debugging)
+access_log_format = os.getenv(
+    "GUNICORN_ACCESS_LOG_FORMAT",
+    '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" dur_us=%(D)s',
+)
