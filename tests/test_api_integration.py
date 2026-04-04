@@ -1,5 +1,7 @@
 import io
 
+from peewee import OperationalError
+
 from app import create_app
 from app.models.event import Event
 from app.models.url import Url
@@ -418,3 +420,17 @@ def test_internal_server_error_returns_json_response(test_db):
 
     assert response.status_code == 500
     assert response.get_json() == {"error": "Internal server error"}
+
+
+def test_database_operational_error_returns_service_unavailable(test_db):
+    app = create_app(testing=True)
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+
+    @app.route("/db-down")
+    def db_down():
+        raise OperationalError("database is unavailable")
+
+    response = app.test_client().get("/db-down")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "Service unavailable"}

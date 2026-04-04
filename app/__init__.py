@@ -4,6 +4,7 @@ import time
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from peewee import InterfaceError, OperationalError
 
 from app.database import close_db, connect_db, db, init_db
 from app.logging_config import configure_logging
@@ -85,6 +86,12 @@ def create_app(testing=None):
     @app.errorhandler(405)
     def handle_405(_error):
         return jsonify(error="Method not allowed"), 405
+
+    @app.errorhandler(OperationalError)
+    @app.errorhandler(InterfaceError)
+    def handle_database_unavailable(error):
+        logger.exception("Database unavailable: %s", error)
+        return jsonify(error="Service unavailable"), 503
 
     @app.errorhandler(500)
     def handle_500(error):

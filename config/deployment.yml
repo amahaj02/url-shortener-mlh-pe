@@ -19,6 +19,7 @@ spec:
             labels:
                 app: url-shortener
         spec:
+            restartPolicy: Always
             automountServiceAccountToken: false
             terminationGracePeriodSeconds: 30
             # Private DOCR pulls need credentials; created by: doctl registry kubernetes-manifest <name> --namespace default | kubectl apply -f -
