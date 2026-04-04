@@ -26,7 +26,7 @@ if workers * threads > db_request_budget:
     if workers * threads > db_request_budget:
         workers = max(1, db_request_budget // threads)
 
-bind = os.getenv("GUNICORN_BIND", "0.0.0.0:5000")
+bind = os.getenv("GUNICORN_BIND", "0.0.0.0:3000")
 worker_class = "gthread"
 worker_tmp_dir = "/dev/shm" if Path("/dev/shm").exists() else "/tmp"
 timeout = _int_env("GUNICORN_TIMEOUT", 30)
