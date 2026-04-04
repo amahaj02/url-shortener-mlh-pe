@@ -5,7 +5,7 @@ metadata:
   labels:
     app: url-shortener
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: url-shortener
@@ -34,6 +34,9 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: url-shortener-env
           env:
             - name: FLASK_DEBUG
               value: "false"
@@ -45,51 +48,10 @@ spec:
               value: "0.0.0.0:8000"
             - name: PORT
               value: "8000"
-            - name: DATABASE_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_NAME
-            - name: DATABASE_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_HOST
-            - name: DATABASE_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_PORT
-            - name: DATABASE_USER
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_USER
-            - name: DATABASE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_PASSWORD
             - name: DATABASE_MAX_CONNECTIONS
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_MAX_CONNECTIONS
+              value: "5"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_POOL_RESERVED_CONNECTIONS
-            - name: DATABASE_STALE_TIMEOUT_SECONDS
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_STALE_TIMEOUT_SECONDS
-            - name: DATABASE_POOL_WAIT_TIMEOUT_SECONDS
-              valueFrom:
-                secretKeyRef:
-                  name: url-shortener-secrets
-                  key: DATABASE_POOL_WAIT_TIMEOUT_SECONDS
+              value: "1"
           readinessProbe:
             httpGet:
               path: /health
@@ -115,11 +77,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
               cpu: 250m
               memory: 256Mi
+            limits:
+              cpu: 700m
+              memory: 768Mi
 ---
 apiVersion: v1
 kind: Service
@@ -134,3 +96,22 @@ spec:
       targetPort: http
   selector:
     app: url-shortener
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: url-shortener-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: url-shortener
+  minReplicas: 3
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

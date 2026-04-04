@@ -65,18 +65,18 @@ jobs:
       - name: Save DigitalOcean kubeconfig
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 ${{ secrets.CLUSTER_NAME }}
 
-      - name: Create or update application secret
+      - name: Create or update application env secret
+        env:
+          K8S_ENV_FILE: ${{ secrets.K8S_ENV_FILE }}
         run: |
-          kubectl create secret generic url-shortener-secrets \
-            --from-literal=DATABASE_NAME='${{ secrets.DATABASE_NAME }}' \
-            --from-literal=DATABASE_HOST='${{ secrets.DATABASE_HOST }}' \
-            --from-literal=DATABASE_PORT='${{ secrets.DATABASE_PORT }}' \
-            --from-literal=DATABASE_USER='${{ secrets.DATABASE_USER }}' \
-            --from-literal=DATABASE_PASSWORD='${{ secrets.DATABASE_PASSWORD }}' \
-            --from-literal=DATABASE_MAX_CONNECTIONS='${{ secrets.DATABASE_MAX_CONNECTIONS }}' \
-            --from-literal=DATABASE_POOL_RESERVED_CONNECTIONS='${{ secrets.DATABASE_POOL_RESERVED_CONNECTIONS }}' \
-            --from-literal=DATABASE_STALE_TIMEOUT_SECONDS='${{ secrets.DATABASE_STALE_TIMEOUT_SECONDS }}' \
-            --from-literal=DATABASE_POOL_WAIT_TIMEOUT_SECONDS='${{ secrets.DATABASE_POOL_WAIT_TIMEOUT_SECONDS }}' \
+          if [ -z "$K8S_ENV_FILE" ]; then
+            echo "K8S_ENV_FILE GitHub secret is required but not set"
+            exit 1
+          fi
+          printf '%s\n' "$K8S_ENV_FILE" > /tmp/app.env
+          kubectl create secret generic url-shortener-env \
+            --namespace=default \
+            --from-env-file=/tmp/app.env \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Render deployment manifest
@@ -84,10 +84,10 @@ jobs:
           sed "s|<IMAGE>|${{ secrets.REGISTRY_NAME }}/url-shortener:${GITHUB_SHA::7}|" config/deployment.yml > /tmp/url-shortener-deployment.yml
 
       - name: Deploy to DigitalOcean Kubernetes
-        run: kubectl apply -f /tmp/url-shortener-deployment.yml
+        run: kubectl apply --namespace=default -f /tmp/url-shortener-deployment.yml
 
       - name: Verify deployment rollout
-        run: kubectl rollout status deployment/url-shortener --timeout=180s
+        run: kubectl rollout status deployment/url-shortener --namespace=default --timeout=180s
 
       - name: Verify service endpoints
-        run: kubectl get service url-shortener-service
+        run: kubectl get service url-shortener-service --namespace=default
