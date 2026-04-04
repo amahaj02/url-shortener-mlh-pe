@@ -85,7 +85,7 @@ spec:
             failureThreshold: 5
           resources:
             requests:
-              cpu: 250m
+              cpu: 150m
               memory: 256Mi
             limits:
               cpu: "1"
@@ -120,9 +120,13 @@ spec:
     scaleUp:
       stabilizationWindowSeconds: 0
       policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
         - type: Percent
           value: 100
           periodSeconds: 30
+      selectPolicy: Max
     scaleDown:
       stabilizationWindowSeconds: 300
       policies:
@@ -135,4 +139,4 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 35
+          averageUtilization: 25

@@ -2,15 +2,22 @@ import http from "k6/http";
 import { check, fail } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://localhost:5000";
-const VUS = Number(__ENV.VUS || 400);
-const DURATION = __ENV.DURATION || "5m";
+const START_VUS = Number(__ENV.START_VUS || 50);
+const MAX_VUS = Number(__ENV.MAX_VUS || 400);
+const RAMP_UP = __ENV.RAMP_UP || "2m";
+const HOLD = __ENV.HOLD || "6m";
+const RAMP_DOWN = __ENV.RAMP_DOWN || "1m";
 
 export const options = {
     scenarios: {
         sustained_autoscale_load: {
-            executor: "constant-vus",
-            vus: VUS,
-            duration: DURATION,
+            executor: "ramping-vus",
+            startVUs: START_VUS,
+            stages: [
+                { duration: RAMP_UP, target: MAX_VUS },
+                { duration: HOLD, target: MAX_VUS },
+                { duration: RAMP_DOWN, target: 0 },
+            ],
             gracefulStop: "30s",
         },
     },
