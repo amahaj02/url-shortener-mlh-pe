@@ -48,6 +48,8 @@ spec:
               value: "0.0.0.0:8000"
             - name: PORT
               value: "8000"
+            - name: HOME
+              value: "/tmp"
             - name: DATABASE_MAX_CONNECTIONS
               value: "5"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
