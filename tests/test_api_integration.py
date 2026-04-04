@@ -188,7 +188,9 @@ def test_json_array_rejected_for_urls_create(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json() == {"errors": {"payload": "JSON object required"}}
+    assert response.get_json() == {
+        "errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}
+    }
 
 
 def test_json_invalid_syntax_on_url_update(client, test_db):
@@ -307,7 +309,9 @@ def test_create_user_rejects_json_string_body(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json() == {"errors": {"payload": "JSON object required"}}
+    assert response.get_json() == {
+        "errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}
+    }
 
 
 def test_update_user_rejects_extra_unknown_fields(client, test_db):

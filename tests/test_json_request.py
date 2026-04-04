@@ -11,12 +11,36 @@ from app.json_request import require_json_object
         (b"", "application/json", {"errors": {"payload": "JSON object required"}}),
         (b"   ", "application/json", {"errors": {"payload": "JSON object required"}}),
         (b"{not valid", "application/json", {"errors": {"payload": "Invalid JSON"}}),
-        (b"null", "application/json", {"errors": {"payload": "JSON object required"}}),
-        (b"[]", "application/json", {"errors": {"payload": "JSON object required"}}),
-        (b'["a"]', "application/json", {"errors": {"payload": "JSON object required"}}),
-        (b'"hello"', "application/json", {"errors": {"payload": "JSON object required"}}),
-        (b"42", "application/json", {"errors": {"payload": "JSON object required"}}),
-        (b"true", "application/json", {"errors": {"payload": "JSON object required"}}),
+        (
+            b"null",
+            "application/json",
+            {"errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}},
+        ),
+        (
+            b"[]",
+            "application/json",
+            {"errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}},
+        ),
+        (
+            b'["a"]',
+            "application/json",
+            {"errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}},
+        ),
+        (
+            b'"hello"',
+            "application/json",
+            {"errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}},
+        ),
+        (
+            b"42",
+            "application/json",
+            {"errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}},
+        ),
+        (
+            b"true",
+            "application/json",
+            {"errors": {"payload": "JSON body must be a JSON object (not null, an array, or a primitive)"}},
+        ),
     ],
 )
 def test_require_json_object_rejects_non_objects_and_bad_syntax(app, body, content_type, expected_json):

@@ -12,6 +12,13 @@ from app.routes import register_routes
 logger = logging.getLogger(__name__)
 
 
+def _client_ip_for_log():
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "-"
+
+
 def _env_bool(name, default=False):
     raw_value = os.getenv(name)
     if raw_value is None:
@@ -58,7 +65,8 @@ def create_app(testing=None):
             if getattr(request, "_t0", None) is not None:
                 elapsed_ms = (time.perf_counter() - request._t0) * 1000.0
                 logging.getLogger("app.http").info(
-                    "%s %s %s %.2fms",
+                    "%s %s %s %s %.2fms",
+                    _client_ip_for_log(),
                     request.method,
                     request.path,
                     response.status_code,
