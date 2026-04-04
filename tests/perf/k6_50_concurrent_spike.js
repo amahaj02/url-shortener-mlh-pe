@@ -2,32 +2,25 @@ import http from "k6/http";
 import { check, fail } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://localhost:5000";
-const START_VUS = Number(__ENV.START_VUS || 50);
-const MAX_VUS = Number(__ENV.MAX_VUS || 400);
-const RAMP_UP = __ENV.RAMP_UP || "2m";
-const HOLD = __ENV.HOLD || "6m";
-const RAMP_DOWN = __ENV.RAMP_DOWN || "1m";
+const VUS = Number(__ENV.VUS || 400);
+const DURATION = __ENV.DURATION || "5m";
 
 export const options = {
     scenarios: {
         sustained_autoscale_load: {
-            executor: "ramping-vus",
-            startVUs: START_VUS,
-            stages: [
-                { duration: RAMP_UP, target: MAX_VUS },
-                { duration: HOLD, target: MAX_VUS },
-                { duration: RAMP_DOWN, target: 0 },
-            ],
+            executor: "constant-vus",
+            vus: VUS,
+            duration: DURATION,
             gracefulStop: "30s",
         },
     },
-    // thresholds: {
-    //     http_req_failed: ["rate<0.02"],
-    //     http_req_duration: ["p(95)<1200"],
-    //     "http_req_duration{name:create_user}": ["p(95)<1500"],
-    //     "http_req_duration{name:create_url}": ["p(95)<1500"],
-    //     "http_req_duration{name:list_urls_by_user}": ["p(95)<1000"],
-    // },
+    thresholds: {
+        http_req_failed: ["rate<0.02"],
+        http_req_duration: ["p(95)<500"],
+        "http_req_duration{name:create_user}": ["p(95)<500"],
+        "http_req_duration{name:create_url}": ["p(95)<500"],
+        "http_req_duration{name:list_urls_by_user}": ["p(95)<500"],
+    },
 };
 
 function createUserPayload() {

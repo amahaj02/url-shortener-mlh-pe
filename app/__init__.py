@@ -1,10 +1,15 @@
+import logging
 import os
+import time
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
 from app.database import close_db, connect_db, db, init_db
+from app.logging_config import configure_logging
 from app.routes import register_routes
+
+logger = logging.getLogger(__name__)
 
 
 def _env_bool(name, default=False):
@@ -16,6 +21,7 @@ def _env_bool(name, default=False):
 
 def create_app(testing=None):
     load_dotenv()
+    configure_logging()
 
     app = Flask(__name__)
     effective_testing = _env_bool("TESTING", default=False) if testing is None else testing
@@ -37,10 +43,28 @@ def create_app(testing=None):
         db_optional_endpoints = {"health"}
 
         @app.before_request
-        def _open_db_connection():
+        def _open_db_and_mark_start():
             if request.endpoint in db_optional_endpoints:
                 return
+            request._t0 = time.perf_counter()
+            if request.endpoint and request.endpoint != "health":
+                logging.getLogger("app.http").debug("%s %s", request.method, request.path)
             connect_db()
+
+        @app.after_request
+        def _log_request_response(response):
+            if request.endpoint in db_optional_endpoints or request.endpoint is None:
+                return response
+            if getattr(request, "_t0", None) is not None:
+                elapsed_ms = (time.perf_counter() - request._t0) * 1000.0
+                logging.getLogger("app.http").info(
+                    "%s %s %s %.2fms",
+                    request.method,
+                    request.path,
+                    response.status_code,
+                    elapsed_ms,
+                )
+            return response
 
         @app.teardown_request
         def _close_db_connection(_exception=None):
@@ -63,7 +87,8 @@ def create_app(testing=None):
         return jsonify(error="Method not allowed"), 405
 
     @app.errorhandler(500)
-    def handle_500(_error):
+    def handle_500(error):
+        logger.exception("Internal server error: %s", error)
         return jsonify(error="Internal server error"), 500
 
     return app

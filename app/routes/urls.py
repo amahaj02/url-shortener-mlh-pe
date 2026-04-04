@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -5,10 +6,12 @@ from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
 from app.database import db
+from app.json_request import require_json_object
 from app.models.event import Event
 from app.models.url import Url
 
 urls_bp = Blueprint("urls", __name__)
+logger = logging.getLogger(__name__)
 
 
 def _is_valid_url(value):
@@ -34,9 +37,9 @@ def _is_user_fk_violation(error):
 
 @urls_bp.route("/urls", methods=["POST"])
 def create_url():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify(errors={"payload": "JSON object required"}), 400
+    payload, err = require_json_object()
+    if err:
+        return err
 
     user_id = payload.get("user_id")
     original_url = payload.get("original_url")
@@ -76,6 +79,7 @@ def create_url():
             "original_url": url_entry.original_url,
         },
     )
+    logger.info("url created id=%s short_code=%s", url_entry.id, url_entry.short_code)
 
     return jsonify(url_entry.to_dict()), 201
 
@@ -107,8 +111,10 @@ def get_url(url_id):
 
 @urls_bp.route("/urls/<int:url_id>", methods=["PUT"])
 def update_url(url_id):
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict) or not payload:
+    payload, err = require_json_object()
+    if err:
+        return err
+    if not payload:
         return jsonify(errors={"payload": "JSON object with updatable fields is required"}), 400
 
     allowed = {"title", "is_active", "original_url"}
@@ -142,17 +148,19 @@ def update_url(url_id):
 
     with db.atomic():
         url_entry.save()
-        Event.create_event(
-            url=url_entry,
-            user=_resolve_user_id(url_entry),
-            event_type="updated",
-            details={
-                "short_code": url_entry.short_code,
-                "original_url": url_entry.original_url,
-                "is_active": url_entry.is_active,
-                "title": url_entry.title,
-            },
-        )
+
+    Event.create_event(
+        url=url_entry,
+        user=_resolve_user_id(url_entry),
+        event_type="updated",
+        details={
+            "short_code": url_entry.short_code,
+            "original_url": url_entry.original_url,
+            "is_active": url_entry.is_active,
+            "title": url_entry.title,
+        },
+    )
+    logger.info("url updated id=%s", url_id)
 
     return jsonify(url_entry.to_dict())
 
@@ -167,17 +175,16 @@ def redirect_short_url(short_code):
     if not url_entry.is_active:
         return jsonify(error="Short URL is inactive"), 410
 
-    with db.atomic():
-        Event.create_event(
-            url=url_entry,
-            user=_resolve_user_id(url_entry),
-            event_type="redirected",
-            details={
-                "short_code": url_entry.short_code,
-                "original_url": url_entry.original_url,
-                "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
-                "user_agent": request.user_agent.string,
-            },
-        )
+    Event.create_event(
+        url=url_entry,
+        user=_resolve_user_id(url_entry),
+        event_type="redirected",
+        details={
+            "short_code": url_entry.short_code,
+            "original_url": url_entry.original_url,
+            "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "user_agent": request.user_agent.string,
+        },
+    )
 
     return redirect(url_entry.original_url, code=302)

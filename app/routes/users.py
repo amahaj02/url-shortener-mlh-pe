@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import re
 from datetime import datetime
 
@@ -7,9 +8,12 @@ from flask import Blueprint, jsonify, request
 from peewee import IntegrityError, chunked
 
 from app.database import db
+from app.json_request import require_json_object
+from app.models.event import Event
 from app.models.user import User
 
 users_bp = Blueprint("users", __name__)
+logger = logging.getLogger(__name__)
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 BULK_IMPORT_BATCH_SIZE = 100
@@ -99,6 +103,14 @@ def bulk_import_users():
                 .execute()
             )
 
+    Event.create_event(
+        url=None,
+        user=None,
+        event_type="bulk_users_imported",
+        details={"imported_row_count": count},
+    )
+    logger.info("bulk user import complete rows=%s", count)
+
     return jsonify(count=count), 201
 
 
@@ -132,7 +144,9 @@ def get_user(user_id):
 
 @users_bp.route("/users", methods=["POST"])
 def create_user():
-    payload = request.get_json(silent=True)
+    payload, err = require_json_object()
+    if err:
+        return err
     errors = _validate_user_payload(payload, is_partial=False)
     if errors:
         return jsonify(errors=errors), 400
@@ -143,15 +157,26 @@ def create_user():
             email=payload["email"].strip(),
         )
     except IntegrityError:
+        logger.warning("create user conflict username=%s", payload.get("username"))
         return jsonify(errors={"user": "username or email already exists"}), 409
+
+    Event.create_event(
+        url=None,
+        user=user.id,
+        event_type="user_created",
+        details={"username": user.username, "email": user.email},
+    )
+    logger.info("user created id=%s", user.id)
 
     return jsonify(user.to_dict()), 201
 
 
 @users_bp.route("/users/<int:user_id>", methods=["PUT"])
 def update_user(user_id):
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict) or not payload:
+    payload, err = require_json_object()
+    if err:
+        return err
+    if not payload:
         return jsonify(errors={"payload": "JSON object with updatable fields is required"}), 400
 
     allowed = {"username", "email"}
@@ -175,6 +200,15 @@ def update_user(user_id):
     try:
         user.save()
     except IntegrityError:
+        logger.warning("update user conflict user_id=%s", user_id)
         return jsonify(errors={"user": "username or email already exists"}), 409
+
+    Event.create_event(
+        url=None,
+        user=user.id,
+        event_type="user_updated",
+        details={"username": user.username, "email": user.email},
+    )
+    logger.info("user updated id=%s", user.id)
 
     return jsonify(user.to_dict())
