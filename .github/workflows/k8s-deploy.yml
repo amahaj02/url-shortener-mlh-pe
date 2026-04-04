@@ -1,0 +1,93 @@
+name: Build, test, push, and deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "config/**"
+      - "deployment/**"
+      - "Dockerfile"
+      - "pyproject.toml"
+      - "run.py"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+concurrency:
+  group: k8s-deploy-main
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Sync dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build container image
+        run: docker build -t ${{ secrets.REGISTRY_NAME }}/url-shortener:${GITHUB_SHA::7} .
+
+      - name: Push image to DigitalOcean Container Registry
+        run: docker push ${{ secrets.REGISTRY_NAME }}/url-shortener:${GITHUB_SHA::7}
+
+      - name: Save DigitalOcean kubeconfig
+        run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 ${{ secrets.CLUSTER_NAME }}
+
+      - name: Create or update application secret
+        run: |
+          kubectl create secret generic url-shortener-secrets \
+            --from-literal=DATABASE_NAME='${{ secrets.DATABASE_NAME }}' \
+            --from-literal=DATABASE_HOST='${{ secrets.DATABASE_HOST }}' \
+            --from-literal=DATABASE_PORT='${{ secrets.DATABASE_PORT }}' \
+            --from-literal=DATABASE_USER='${{ secrets.DATABASE_USER }}' \
+            --from-literal=DATABASE_PASSWORD='${{ secrets.DATABASE_PASSWORD }}' \
+            --from-literal=DATABASE_MAX_CONNECTIONS='${{ secrets.DATABASE_MAX_CONNECTIONS }}' \
+            --from-literal=DATABASE_POOL_RESERVED_CONNECTIONS='${{ secrets.DATABASE_POOL_RESERVED_CONNECTIONS }}' \
+            --from-literal=DATABASE_STALE_TIMEOUT_SECONDS='${{ secrets.DATABASE_STALE_TIMEOUT_SECONDS }}' \
+            --from-literal=DATABASE_POOL_WAIT_TIMEOUT_SECONDS='${{ secrets.DATABASE_POOL_WAIT_TIMEOUT_SECONDS }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Render deployment manifest
+        run: |
+          sed "s|<IMAGE>|${{ secrets.REGISTRY_NAME }}/url-shortener:${GITHUB_SHA::7}|" config/deployment.yml > /tmp/url-shortener-deployment.yml
+
+      - name: Deploy to DigitalOcean Kubernetes
+        run: kubectl apply -f /tmp/url-shortener-deployment.yml
+
+      - name: Verify deployment rollout
+        run: kubectl rollout status deployment/url-shortener --timeout=180s
+
+      - name: Verify service endpoints
+        run: kubectl get service url-shortener-service

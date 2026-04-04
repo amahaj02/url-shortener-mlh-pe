@@ -21,6 +21,7 @@ def create_app(testing=None):
     effective_testing = _env_bool("TESTING", default=False) if testing is None else testing
     app.config["TESTING"] = effective_testing
     app.config["DEBUG"] = _env_bool("FLASK_DEBUG", default=False)
+    app.config["AUTO_CREATE_TABLES"] = _env_bool("AUTO_CREATE_TABLES", default=True)
 
     init_db(testing=effective_testing)
 
@@ -28,7 +29,8 @@ def create_app(testing=None):
     from app.models import ALL_MODELS
 
     connect_db()
-    db.create_tables(ALL_MODELS, safe=True)
+    if app.config["AUTO_CREATE_TABLES"]:
+        db.create_tables(ALL_MODELS, safe=True)
     close_db()
 
     if not effective_testing:
