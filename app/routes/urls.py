@@ -67,15 +67,15 @@ def create_url():
     url_entry.short_code = Url.short_code_from_id(url_entry.id)
     url_entry.save(only=[Url.short_code])
 
-        Event.create_event(
-            url=url_entry,
-            user=user_id,
-            event_type="created",
-            details={
-                "short_code": url_entry.short_code,
-                "original_url": url_entry.original_url,
-            },
-        )
+    Event.create_event(
+        url=url_entry,
+        user=user_id,
+        event_type="created",
+        details={
+            "short_code": url_entry.short_code,
+            "original_url": url_entry.original_url,
+        },
+    )
 
     return jsonify(url_entry.to_dict()), 201
 
