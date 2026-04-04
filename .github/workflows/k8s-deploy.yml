@@ -83,6 +83,13 @@ jobs:
             - name: Save DigitalOcean kubeconfig
               run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 ${{ secrets.CLUSTER_NAME }}
 
+            - name: Ensure Container Registry pull secret (fixes ErrImagePull 401)
+              env:
+                  REGISTRY_NAME: ${{ secrets.REGISTRY_NAME }}
+              run: |
+                  REGISTRY_SHORT="${REGISTRY_NAME##*/}"
+                  doctl registry kubernetes-manifest "$REGISTRY_SHORT" --namespace default | kubectl apply -f -
+
             - name: Create or update application env secret
               env:
                   K8S_ENV_FILE: ${{ secrets.K8S_ENV_FILE }}
@@ -98,8 +105,14 @@ jobs:
                     --dry-run=client -o yaml | kubectl apply -f -
 
             - name: Render deployment manifest
+              env:
+                  REGISTRY_NAME: ${{ secrets.REGISTRY_NAME }}
               run: |
-                  sed "s|<IMAGE>|${{ secrets.REGISTRY_NAME }}/url-shortener:${GITHUB_SHA::7}|" config/deployment.yml > /tmp/url-shortener-deployment.yml
+                  REGISTRY_SHORT="${REGISTRY_NAME##*/}"
+                  IMAGE_PULL_SECRET="registry-${REGISTRY_SHORT}"
+                  sed -e "s|<IMAGE>|${REGISTRY_NAME}/url-shortener:${GITHUB_SHA::7}|" \
+                      -e "s|<IMAGE_PULL_SECRET>|${IMAGE_PULL_SECRET}|" \
+                      config/deployment.yml > /tmp/url-shortener-deployment.yml
 
             - name: Deploy to DigitalOcean Kubernetes
               run: kubectl apply --namespace=default -f /tmp/url-shortener-deployment.yml

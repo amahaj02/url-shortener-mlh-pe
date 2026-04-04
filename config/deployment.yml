@@ -21,6 +21,9 @@ spec:
         spec:
             automountServiceAccountToken: false
             terminationGracePeriodSeconds: 30
+            # Private DOCR pulls need credentials; created by: doctl registry kubernetes-manifest <name> --namespace default | kubectl apply -f -
+            imagePullSecrets:
+                - name: <IMAGE_PULL_SECRET>
             affinity:
                 podAffinity:
                     preferredDuringSchedulingIgnoredDuringExecution:
