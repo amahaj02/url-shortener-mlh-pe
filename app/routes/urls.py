@@ -1,7 +1,7 @@
 from datetime import datetime
 from urllib.parse import urlparse
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
 from app.models.event import Event
@@ -142,3 +142,28 @@ def update_url(url_id):
     )
 
     return jsonify(url_entry.to_dict())
+
+
+@urls_bp.route("/<string:short_code>", methods=["GET"])
+def redirect_short_url(short_code):
+    try:
+        url_entry = Url.get(Url.short_code == short_code)
+    except Url.DoesNotExist:
+        return jsonify(error="Short URL not found"), 404
+
+    if not url_entry.is_active:
+        return jsonify(error="Short URL is inactive"), 410
+
+    Event.create_event(
+        url=url_entry,
+        user=url_entry.user,
+        event_type="redirected",
+        details={
+            "short_code": url_entry.short_code,
+            "original_url": url_entry.original_url,
+            "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "user_agent": request.user_agent.string,
+        },
+    )
+
+    return redirect(url_entry.original_url, code=302)
