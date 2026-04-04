@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - scalability/silver
     paths:
       - "app/**"
       - "config/**"
