@@ -23,6 +23,11 @@ uv.lock
 *.swo
 *~
 
+# Local agent tooling
+.codex/
+.agents/
+AGENTS.local.md
+
 # pytest
 .pytest_cache/
 
