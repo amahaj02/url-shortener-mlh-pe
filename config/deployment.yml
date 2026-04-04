@@ -68,11 +68,11 @@ spec:
             - name: GUNICORN_LOG_LEVEL
               value: "info"
             - name: DATABASE_MAX_CONNECTIONS
-              value: "3"
+              value: "2"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
               value: "1"
             - name: WEB_CONCURRENCY
-              value: "2"
+              value: "1"
             - name: GUNICORN_THREADS
               value: "2"
           readinessProbe:
@@ -100,8 +100,8 @@ spec:
             failureThreshold: 8
           resources:
             requests:
-              cpu: 600m
-              memory: 1024Mi
+              cpu: 300m
+              memory: 512Mi
             limits:
               cpu: "1800m"
               memory: 3584Mi
@@ -130,7 +130,7 @@ spec:
     kind: Deployment
     name: url-shortener
   minReplicas: 3
-  maxReplicas: 9
+  maxReplicas: 7
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
