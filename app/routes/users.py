@@ -4,13 +4,15 @@ import re
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
-from peewee import IntegrityError
+from peewee import IntegrityError, chunked
 
+from app.database import db
 from app.models.user import User
 
 users_bp = Blueprint("users", __name__)
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+BULK_IMPORT_BATCH_SIZE = 100
 
 
 def _parse_datetime(value):
@@ -46,6 +48,29 @@ def _validate_user_payload(data, is_partial=False):
     return errors
 
 
+def _build_user_create_fields(row):
+    username = (row.get("username") or "").strip()
+    email = (row.get("email") or "").strip()
+    created_at = _parse_datetime((row.get("created_at") or "").strip())
+
+    if not username or not EMAIL_PATTERN.match(email):
+        return None
+
+    create_fields = {
+        "username": username,
+        "email": email,
+    }
+
+    if created_at is not None:
+        create_fields["created_at"] = created_at
+
+    raw_id = (row.get("id") or "").strip()
+    if raw_id.isdigit():
+        create_fields["id"] = int(raw_id)
+
+    return create_fields
+
+
 @users_bp.route("/users/bulk", methods=["POST"])
 def bulk_import_users():
     if not request.files:
@@ -58,32 +83,21 @@ def bulk_import_users():
     content = uploaded_file.read().decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
 
-    count = 0
+    rows = []
     for row in reader:
-        username = (row.get("username") or "").strip()
-        email = (row.get("email") or "").strip()
-        created_at = _parse_datetime((row.get("created_at") or "").strip())
+        create_fields = _build_user_create_fields(row)
+        if create_fields is not None:
+            rows.append(create_fields)
 
-        if not username or not EMAIL_PATTERN.match(email):
-            continue
-
-        create_fields = {
-            "username": username,
-            "email": email,
-        }
-
-        if created_at is not None:
-            create_fields["created_at"] = created_at
-
-        raw_id = (row.get("id") or "").strip()
-        if raw_id.isdigit():
-            create_fields["id"] = int(raw_id)
-
-        try:
-            User.create(**create_fields)
-            count += 1
-        except IntegrityError:
-            continue
+    count = 0
+    with db.atomic():
+        for batch in chunked(rows, BULK_IMPORT_BATCH_SIZE):
+            count += (
+                User.insert_many(batch)
+                .on_conflict_ignore()
+                .as_rowcount()
+                .execute()
+            )
 
     return jsonify(count=count), 201
 
