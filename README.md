@@ -51,35 +51,27 @@ createdb hackathon_db
 # 4. Configure environment
 cp .env.example .env   # edit if your DB credentials differ
 
-# 5. Run the server
+# 5. Run the server (same env as `uv sync`)
 uv run run.py
 
 # 6. Verify
-curl http://localhost:5000/health
+curl http://localhost:3000/health
 # → {"status":"ok"}
 ```
 
 ## Production Runtime (DigitalOcean)
 
-For deployment, run Gunicorn instead of Flask's built-in server:
+`uv run run.py` starts **Gunicorn** with `deployment/gunicorn.conf.py` (same idea as the Docker `CMD`). You can also invoke Gunicorn directly:
 
 ```bash
 uv run gunicorn -c deployment/gunicorn.conf.py run:app
 ```
 
+- Bind address: set `GUNICORN_BIND` (e.g. `0.0.0.0:3000` locally), or rely on `HOST` + `PORT` when `GUNICORN_BIND` is unset.
+- **Docker / Kubernetes** listen on **8000** (`Dockerfile` and `config/deployment.yml` set `PORT` and `GUNICORN_BIND` accordingly).
 - `workers * threads` is auto-capped to stay within your DB pool budget.
 - Keep `DATABASE_MAX_CONNECTIONS` below your managed Postgres limit across all app instances.
 - Tune `WEB_CONCURRENCY` and `GUNICORN_THREADS` in `.env`.
-
-### Windows note
-
-Gunicorn does not run on native Windows. Use:
-
-```bash
-uv run run.py
-```
-
-On Windows, `run.py` uses Waitress automatically. On macOS/Linux, it uses Flask's built-in server unless you start Gunicorn explicitly.
 
 ## Project Structure
 
@@ -229,8 +221,8 @@ uv run run.py
 2. In a separate terminal, run the k6 script:
 
 ```bash
-k6 run -e BASE_URL=http://localhost:5000 -e DURATION=60s tests/perf/k6_50_vus.js
+k6 run -e BASE_URL=http://localhost:3000 -e DURATION=60s tests/perf/k6_50_vus.js
 ```
 
 - The script uses `constant-vus` with `vus: 50` for the full duration.
-- Update `BASE_URL` if your API is not running on `localhost:5000`.
+- Update `BASE_URL` if your API is not running on `localhost:3000`.
