@@ -35,8 +35,19 @@ max_requests = _int_env("GUNICORN_MAX_REQUESTS", 1000)
 max_requests_jitter = _int_env("GUNICORN_MAX_REQUESTS_JITTER", 100)
 graceful_timeout = _int_env("GUNICORN_GRACEFUL_TIMEOUT", 30)
 
-# Log to stdout/stderr so Kubernetes log aggregation (kubectl logs) shows requests + errors.
-accesslog = os.getenv("GUNICORN_ACCESS_LOG", "-")
+# Access log: disabled by default — Flask logs each request via app.http (avoids duplicate lines).
+# Set GUNICORN_ACCESS_LOG=- to log Gunicorn's access line as well (e.g. for raw worker timing).
+def _gunicorn_access_log_target():
+    raw = os.getenv("GUNICORN_ACCESS_LOG")
+    if raw is None:
+        return None
+    stripped = raw.strip().lower()
+    if stripped in ("", "none", "off", "false"):
+        return None
+    return raw
+
+
+accesslog = _gunicorn_access_log_target()
 errorlog = os.getenv("GUNICORN_ERROR_LOG", "-")
 loglevel = os.getenv("GUNICORN_LOG_LEVEL", "info")
 # %(D)s = request duration in microseconds (useful for tail latency debugging)
