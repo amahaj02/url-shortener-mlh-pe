@@ -21,10 +21,7 @@ class Url(BaseModel):
     @classmethod
     def generate_short_code(cls, length=6):
         alphabet = string.ascii_letters + string.digits
-        while True:
-            short_code = "".join(random.choices(alphabet, k=length))
-            if not cls.select().where(cls.short_code == short_code).exists():
-                return short_code
+        return "".join(random.choices(alphabet, k=length))
 
     def to_dict(self):
         return {

@@ -122,6 +122,43 @@ def test_unknown_route_returns_json_404(client, test_db):
     assert response.get_json() == {"error": "Not found"}
 
 
+def test_clear_db_endpoint_deletes_all_rows(client, test_db):
+    user = User.create(username="clear-me", email="clear-me@example.com")
+    url_entry = Url.create(
+        user=user,
+        short_code="clr001",
+        original_url="https://example.com/clear",
+        is_active=True,
+    )
+    Event.create_event(
+        url=url_entry,
+        user=user,
+        event_type="created",
+        details={"short_code": url_entry.short_code},
+    )
+
+    response = client.post("/admin/clear-db")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["message"] == "Database cleared"
+    assert payload["total_deleted"] == 3
+    assert User.select().count() == 0
+    assert Url.select().count() == 0
+    assert Event.select().count() == 0
+
+
+def test_clear_db_get_returns_admin_help(client, test_db):
+    response = client.get("/admin/clear-db")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "endpoint": "/admin/clear-db",
+        "method": "POST",
+        "description": "Deletes all rows from known tables in reverse dependency order.",
+    }
+
+
 def test_internal_server_error_returns_json_response(test_db):
     app = create_app(testing=True)
     app.config["PROPAGATE_EXCEPTIONS"] = False
