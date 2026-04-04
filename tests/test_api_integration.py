@@ -33,6 +33,22 @@ def test_create_user_rejects_duplicate_email(client, test_db):
     assert response.get_json() == {"errors": {"user": "username or email already exists"}}
 
 
+def test_create_user_is_idempotent_for_exact_same_input(client, test_db):
+    first = client.post(
+        "/users",
+        json={"username": "same-user", "email": "same-user@example.com"},
+    )
+    second = client.post(
+        "/users",
+        json={"username": "same-user", "email": "same-user@example.com"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.get_json()["username"] == "same-user"
+    assert User.select().where(User.username == "same-user").count() == 1
+
+
 def test_bulk_import_users_inserts_valid_rows_in_batches(client, test_db):
     csv_bytes = io.BytesIO(
         b"id,username,email,created_at\n"
@@ -101,6 +117,20 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     events = list(Event.select().order_by(Event.id))
     assert [event.event_type for event in events] == ["created", "updated", "redirected"]
     assert events[-1].to_dict()["details"]["ip_address"] == "203.0.113.1"
+
+
+def test_list_urls_filters_by_is_active(client, test_db):
+    user = User.create(username="active-filter", email="active-filter@example.com")
+    active_url = Url.create(user=user, short_code="af1", original_url="https://example.com/a", is_active=True)
+    inactive_url = Url.create(user=user, short_code="af2", original_url="https://example.com/b", is_active=False)
+
+    response = client.get("/urls?is_active=true")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    short_codes = {item["short_code"] for item in payload}
+    assert active_url.short_code in short_codes
+    assert inactive_url.short_code not in short_codes
 
 
 def test_create_url_returns_404_when_user_does_not_exist(client, test_db):
@@ -373,6 +403,62 @@ def test_unknown_route_returns_json_404(client, test_db):
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Not found"}
+
+
+def test_delete_user_returns_204(client, test_db):
+    user = User.create(username="delete-me", email="delete-me@example.com")
+
+    response = client.delete(f"/users/{user.id}")
+
+    assert response.status_code == 204
+    assert User.select().where(User.id == user.id).count() == 0
+
+
+def test_delete_url_returns_204(client, test_db):
+    user = User.create(username="delete-url", email="delete-url@example.com")
+    url_entry = Url.create(user=user, short_code="delurl", original_url="https://example.com/delete", is_active=True)
+
+    response = client.delete(f"/urls/{url_entry.id}")
+
+    assert response.status_code == 204
+    assert Url.select().where(Url.id == url_entry.id).count() == 0
+
+
+def test_events_endpoint_filters_by_url_and_event_type(client, test_db):
+    user = User.create(username="evt-filter", email="evt-filter@example.com")
+    url_a = Url.create(user=user, short_code="evta", original_url="https://example.com/a", is_active=True)
+    url_b = Url.create(user=user, short_code="evtb", original_url="https://example.com/b", is_active=True)
+    Event.create(url=url_a, user=user, event_type="click", details=Event.serialize_details({"n": 1}))
+    Event.create(url=url_b, user=user, event_type="created", details=Event.serialize_details({"n": 2}))
+
+    by_url = client.get(f"/events?url_id={url_a.id}")
+    by_type = client.get("/events?event_type=click")
+
+    assert by_url.status_code == 200
+    assert all(item["url_id"] == url_a.id for item in by_url.get_json())
+    assert by_type.status_code == 200
+    assert all(item["event_type"] == "click" for item in by_type.get_json())
+
+
+def test_create_event_returns_201(client, test_db):
+    user = User.create(username="evt-user", email="evt-user@example.com")
+    url_entry = Url.create(user=user, short_code="evt01", original_url="https://example.com/event", is_active=True)
+
+    response = client.post(
+        "/events",
+        json={
+            "url_id": url_entry.id,
+            "user_id": user.id,
+            "event_type": "click",
+            "details": {"referrer": "https://google.com"},
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["event_type"] == "click"
+    assert payload["url_id"] == url_entry.id
+    assert payload["user_id"] == user.id
 
 
 def test_clear_db_endpoint_deletes_all_rows(client, test_db):

@@ -96,6 +96,13 @@ def list_urls():
             return jsonify(errors={"user_id": "user_id must be an integer"}), 400
         query = query.where(Url.user == user_id_num)
 
+    is_active = request.args.get("is_active")
+    if is_active is not None:
+        normalized = is_active.strip().lower()
+        if normalized not in {"true", "false"}:
+            return jsonify(errors={"is_active": "is_active must be true or false"}), 400
+        query = query.where(Url.is_active == (normalized == "true"))
+
     return jsonify([url_entry.to_dict() for url_entry in query.iterator()])
 
 
@@ -163,6 +170,16 @@ def update_url(url_id):
     logger.info("url updated id=%s", url_id)
 
     return jsonify(url_entry.to_dict())
+
+
+@urls_bp.route("/urls/<int:url_id>", methods=["DELETE"])
+def delete_url(url_id):
+    deleted = Url.delete().where(Url.id == url_id).execute()
+    if deleted == 0:
+        return jsonify(error="URL not found"), 404
+
+    logger.info("url deleted id=%s", url_id)
+    return ("", 204)
 
 
 @urls_bp.route("/<string:short_code>", methods=["GET"])

@@ -17,6 +17,12 @@ class Event(BaseModel):
     details = TextField(default="{}")
 
     @classmethod
+    def serialize_details(cls, details):
+        if not isinstance(details, dict):
+            details = {}
+        return json.dumps(details)
+
+    @classmethod
     def create_event(cls, *, url, user, event_type, details):
         from app.event_pipeline import enqueue
 

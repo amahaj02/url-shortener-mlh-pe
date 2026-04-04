@@ -157,6 +157,17 @@ def create_user():
             email=payload["email"].strip(),
         )
     except IntegrityError:
+        existing_user = (
+            User.select()
+            .where(
+                (User.username == payload["username"].strip())
+                & (User.email == payload["email"].strip())
+            )
+            .first()
+        )
+        if existing_user is not None:
+            logger.info("create user idempotent hit username=%s", existing_user.username)
+            return jsonify(existing_user.to_dict()), 201
         logger.warning("create user conflict username=%s", payload.get("username"))
         return jsonify(errors={"user": "username or email already exists"}), 409
 
@@ -212,3 +223,13 @@ def update_user(user_id):
     logger.info("user updated id=%s", user.id)
 
     return jsonify(user.to_dict())
+
+
+@users_bp.route("/users/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    deleted = User.delete().where(User.id == user_id).execute()
+    if deleted == 0:
+        return jsonify(error="User not found"), 404
+
+    logger.info("user deleted id=%s", user_id)
+    return ("", 204)
