@@ -9,6 +9,7 @@ from app.models.url import Url
 from app.models.user import User
 
 urls_bp = Blueprint("urls", __name__)
+MAX_SHORT_CODE_ATTEMPTS = 5
 
 
 def _is_valid_url(value):
@@ -17,6 +18,14 @@ def _is_valid_url(value):
 
     parsed = urlparse(value.strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _resolve_user_id(url_entry):
+    if hasattr(url_entry, "user_id"):
+        return url_entry.user_id
+
+    user = getattr(url_entry, "user", None)
+    return getattr(user, "id", None)
 
 
 @urls_bp.route("/urls", methods=["POST"])
@@ -40,24 +49,30 @@ def create_url():
         return jsonify(errors=errors), 400
 
     try:
-        user = User.get_by_id(user_id)
+        User.get_by_id(user_id)
     except User.DoesNotExist:
         return jsonify(error="User not found"), 404
 
-    try:
-        url_entry = Url.create(
-            user=user,
-            short_code=Url.generate_short_code(),
-            original_url=original_url.strip(),
-            title=title.strip() if isinstance(title, str) else None,
-            is_active=True,
-        )
-    except IntegrityError:
-        return jsonify(errors={"url": "Could not create URL"}), 400
+    url_entry = None
+    for _attempt in range(MAX_SHORT_CODE_ATTEMPTS):
+        try:
+            url_entry = Url.create(
+                user=user_id,
+                short_code=Url.generate_short_code(),
+                original_url=original_url.strip(),
+                title=title.strip() if isinstance(title, str) else None,
+                is_active=True,
+            )
+            break
+        except IntegrityError:
+            continue
+
+    if url_entry is None:
+        return jsonify(errors={"url": "Could not create URL"}), 503
 
     Event.create_event(
         url=url_entry,
-        user=user,
+        user=user_id,
         event_type="created",
         details={
             "short_code": url_entry.short_code,
@@ -131,7 +146,7 @@ def update_url(url_id):
 
     Event.create_event(
         url=url_entry,
-        user=url_entry.user,
+        user=_resolve_user_id(url_entry),
         event_type="updated",
         details={
             "short_code": url_entry.short_code,
@@ -156,7 +171,7 @@ def redirect_short_url(short_code):
 
     Event.create_event(
         url=url_entry,
-        user=url_entry.user,
+        user=_resolve_user_id(url_entry),
         event_type="redirected",
         details={
             "short_code": url_entry.short_code,

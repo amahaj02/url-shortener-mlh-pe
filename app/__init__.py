@@ -1,26 +1,50 @@
-from dotenv import load_dotenv
-from flask import Flask, jsonify
+import os
 
-from app.database import db, init_db
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request
+
+from app.database import close_db, connect_db, db, init_db
 from app.routes import register_routes
 
 
-def create_app(testing=False):
+def _env_bool(name, default=False):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def create_app(testing=None):
     load_dotenv()
 
     app = Flask(__name__)
-    app.config["TESTING"] = testing
+    effective_testing = _env_bool("TESTING", default=False) if testing is None else testing
+    app.config["TESTING"] = effective_testing
+    app.config["DEBUG"] = _env_bool("FLASK_DEBUG", default=False)
 
-    if not testing:
-        init_db(app)
+    init_db(testing=effective_testing)
 
-        from app import models  # noqa: F401 - registers models with Peewee
-        from app.models import ALL_MODELS
+    from app import models  # noqa: F401 - registers models with Peewee
+    from app.models import ALL_MODELS
 
-        db.connect(reuse_if_open=True)
-        db.create_tables(ALL_MODELS, safe=True)
-        if not db.is_closed():
-            db.close()
+    connect_db()
+    db.create_tables(ALL_MODELS, safe=True)
+    close_db()
+
+    if not effective_testing:
+        db_optional_endpoints = {"health"}
+
+        @app.before_request
+        def _open_db_connection():
+            if request.endpoint in db_optional_endpoints:
+                return
+            connect_db()
+
+        @app.teardown_request
+        def _close_db_connection(_exception=None):
+            if request.endpoint in db_optional_endpoints:
+                return
+            close_db()
 
     register_routes(app)
 
@@ -31,6 +55,10 @@ def create_app(testing=False):
     @app.errorhandler(404)
     def handle_404(_error):
         return jsonify(error="Not found"), 404
+
+    @app.errorhandler(405)
+    def handle_405(_error):
+        return jsonify(error="Method not allowed"), 405
 
     @app.errorhandler(500)
     def handle_500(_error):

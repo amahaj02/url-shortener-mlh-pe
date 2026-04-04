@@ -38,3 +38,7 @@ Thumbs.db
 
 # Judging (not visible to participants)
 judging/
+
+# Local kube configs / credentials
+deployment/*kubeconfig*.yaml
+kubeconfig*.yaml
