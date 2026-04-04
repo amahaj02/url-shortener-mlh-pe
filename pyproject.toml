@@ -12,8 +12,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest-cov>=7.0",
     "pytest>=8.4",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=50"

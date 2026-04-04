@@ -24,3 +24,11 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Deployment gate passed
+        run: echo "Tests passed. Deployment may proceed."

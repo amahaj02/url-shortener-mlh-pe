@@ -28,4 +28,12 @@ def create_app(testing=False):
     def health():
         return jsonify(status="ok")
 
+    @app.errorhandler(404)
+    def handle_404(_error):
+        return jsonify(error="Not found"), 404
+
+    @app.errorhandler(500)
+    def handle_500(_error):
+        return jsonify(error="Internal server error"), 500
+
     return app
