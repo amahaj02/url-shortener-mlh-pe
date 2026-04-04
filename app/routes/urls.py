@@ -6,10 +6,8 @@ from peewee import IntegrityError
 
 from app.models.event import Event
 from app.models.url import Url
-from app.models.user import User
 
 urls_bp = Blueprint("urls", __name__)
-MAX_SHORT_CODE_ATTEMPTS = 5
 
 
 def _is_valid_url(value):
@@ -26,6 +24,11 @@ def _resolve_user_id(url_entry):
 
     user = getattr(url_entry, "user", None)
     return getattr(user, "id", None)
+
+
+def _is_user_fk_violation(error):
+    message = str(error).lower()
+    return "foreign key" in message or "url_user_id_fkey" in message
 
 
 @urls_bp.route("/urls", methods=["POST"])
@@ -49,26 +52,19 @@ def create_url():
         return jsonify(errors=errors), 400
 
     try:
-        User.get_by_id(user_id)
-    except User.DoesNotExist:
-        return jsonify(error="User not found"), 404
+        url_entry = Url.create(
+            user=user_id,
+            original_url=original_url.strip(),
+            title=title.strip() if isinstance(title, str) else None,
+            is_active=True,
+        )
+    except IntegrityError as error:
+        if _is_user_fk_violation(error):
+            return jsonify(error="User not found"), 404
+        return jsonify(errors={"url": "Could not create URL"}), 400
 
-    url_entry = None
-    for _attempt in range(MAX_SHORT_CODE_ATTEMPTS):
-        try:
-            url_entry = Url.create(
-                user=user_id,
-                short_code=Url.generate_short_code(),
-                original_url=original_url.strip(),
-                title=title.strip() if isinstance(title, str) else None,
-                is_active=True,
-            )
-            break
-        except IntegrityError:
-            continue
-
-    if url_entry is None:
-        return jsonify(errors={"url": "Could not create URL"}), 503
+    url_entry.short_code = Url.short_code_from_id(url_entry.id)
+    url_entry.save(only=[Url.short_code])
 
     Event.create_event(
         url=url_entry,

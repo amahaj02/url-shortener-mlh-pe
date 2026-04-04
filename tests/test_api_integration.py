@@ -68,6 +68,7 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     url_id = created_payload["id"]
     short_code = created_payload["short_code"]
     assert created_payload["title"] == "Start Here"
+    assert created_payload["short_code"] == Url.short_code_from_id(url_id)
 
     update_response = client.put(
         f"/urls/{url_id}",
@@ -98,6 +99,36 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     events = list(Event.select().order_by(Event.id))
     assert [event.event_type for event in events] == ["created", "updated", "redirected"]
     assert events[-1].to_dict()["details"]["ip_address"] == "203.0.113.1"
+
+
+def test_create_url_returns_404_when_user_does_not_exist(client, test_db):
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": 999999,
+            "original_url": "https://example.com/missing-user",
+            "title": "Missing User",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "User not found"}
+
+def test_create_url_short_code_is_generated_from_row_id(client, test_db):
+    user = User.create(username="deterministic-owner", email="deterministic-owner@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/deterministic",
+            "title": "Deterministic Code",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["short_code"] == Url.short_code_from_id(payload["id"])
 
 
 def test_inactive_short_url_returns_gone(client, test_db):
