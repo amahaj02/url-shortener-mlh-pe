@@ -10,11 +10,11 @@ WORKDIR /app
 
 RUN python -m pip install --no-cache-dir --upgrade pip uv
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+COPY pyproject.toml ./
+RUN uv sync --no-dev --no-install-project
 
 COPY . .
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 EXPOSE 8000
 
