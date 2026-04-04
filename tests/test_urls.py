@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 
+from peewee import IntegrityError
+
 from app.models.url import Url
-from app.routes.urls import _is_valid_url
+from app.routes.urls import _is_user_fk_violation, _is_valid_url
 
 
 def test_is_valid_url_accepts_http_and_https_only():
@@ -9,6 +11,26 @@ def test_is_valid_url_accepts_http_and_https_only():
     assert _is_valid_url("http://example.com/path")
     assert not _is_valid_url("ftp://example.com")
     assert not _is_valid_url("example.com")
+
+
+def test_short_code_from_id_is_deterministic_base62():
+    assert Url.short_code_from_id(1) == "1"
+    assert Url.short_code_from_id(61) == "Z"
+    assert Url.short_code_from_id(62) == "10"
+    assert Url.short_code_from_id(63) == "11"
+
+
+def test_short_code_from_id_rejects_invalid_ids():
+    try:
+        Url.short_code_from_id(0)
+    except ValueError as error:
+        assert str(error) == "row_id must be a positive integer"
+    else:
+        raise AssertionError("Expected ValueError for non-positive row id")
+
+
+def test_integrity_error_helper_identifies_user_fk_failures():
+    assert _is_user_fk_violation(IntegrityError("insert or update on table \"url\" violates foreign key constraint \"url_user_id_fkey\""))
 
 
 def test_redirect_short_url_returns_404_for_missing_code(client, monkeypatch):

@@ -68,6 +68,7 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     url_id = created_payload["id"]
     short_code = created_payload["short_code"]
     assert created_payload["title"] == "Start Here"
+    assert created_payload["short_code"] == Url.short_code_from_id(url_id)
 
     update_response = client.put(
         f"/urls/{url_id}",
@@ -100,6 +101,36 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     assert events[-1].to_dict()["details"]["ip_address"] == "203.0.113.1"
 
 
+def test_create_url_returns_404_when_user_does_not_exist(client, test_db):
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": 999999,
+            "original_url": "https://example.com/missing-user",
+            "title": "Missing User",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "User not found"}
+
+def test_create_url_short_code_is_generated_from_row_id(client, test_db):
+    user = User.create(username="deterministic-owner", email="deterministic-owner@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/deterministic",
+            "title": "Deterministic Code",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    assert payload["short_code"] == Url.short_code_from_id(payload["id"])
+
+
 def test_inactive_short_url_returns_gone(client, test_db):
     user = User.create(username="inactive", email="inactive@example.com")
     url_entry = Url.create(
@@ -109,10 +140,226 @@ def test_inactive_short_url_returns_gone(client, test_db):
         is_active=False,
     )
 
+    events_before = Event.select().count()
+
     response = client.get(f"/{url_entry.short_code}")
 
     assert response.status_code == 410
     assert response.get_json() == {"error": "Short URL is inactive"}
+    assert Event.select().count() == events_before
+
+
+def test_json_body_rejects_malformed_json(client, test_db):
+    response = client.post(
+        "/users",
+        data="{not-json",
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"errors": {"payload": "Invalid JSON"}}
+
+
+def test_json_body_accepts_object_without_json_content_type(client, test_db):
+    response = client.post(
+        "/users",
+        data='{"username": "plain", "email": "plain@example.com"}',
+        content_type="text/plain",
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["username"] == "plain"
+
+
+def test_json_empty_body_requires_object(client, test_db):
+    response = client.post("/urls", data="", content_type="application/json")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"errors": {"payload": "JSON object required"}}
+
+
+def test_json_array_rejected_for_urls_create(client, test_db):
+    user = User.create(username="arr", email="arr@example.com")
+
+    response = client.post(
+        "/urls",
+        data=f'[{{"user_id": {user.id}, "original_url": "https://x.com"}}]',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"errors": {"payload": "JSON object required"}}
+
+
+def test_json_invalid_syntax_on_url_update(client, test_db):
+    user = User.create(username="badput", email="badput@example.com")
+    url_entry = Url.create(
+        user=user,
+        short_code="put01",
+        original_url="https://example.com/put",
+        is_active=True,
+    )
+
+    response = client.put(
+        f"/urls/{url_entry.id}",
+        data="{",
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"errors": {"payload": "Invalid JSON"}}
+
+
+def test_unknown_short_code_returns_404_without_recording_event(client, test_db):
+    events_before = Event.select().count()
+
+    response = client.get("/noSuchCodeZZ9")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "Short URL not found"}
+    assert Event.select().count() == events_before
+
+
+def test_two_creations_same_destination_get_distinct_short_codes(client, test_db):
+    user = User.create(username="twin", email="twin@example.com")
+
+    first = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/same-destination",
+        },
+    )
+    second = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/same-destination",
+        },
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    a, b = first.get_json(), second.get_json()
+    assert a["id"] != b["id"]
+    assert a["short_code"] != b["short_code"]
+    assert a["short_code"] == Url.short_code_from_id(a["id"])
+    assert b["short_code"] == Url.short_code_from_id(b["id"])
+
+
+def test_create_url_rejects_string_user_id(client, test_db):
+    user = User.create(username="strid", email="strid@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": str(user.id),
+            "original_url": "https://example.com/x",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+
+
+def test_create_url_rejects_non_string_title(client, test_db):
+    user = User.create(username="titletype", email="titletype@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/y",
+            "title": 12345,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["title"] == "title must be a string"
+
+
+def test_deactivated_url_returns_410_without_redirect_event(client, test_db):
+    user = User.create(username="sleep", email="sleep@example.com")
+    created = client.post(
+        "/urls",
+        json={"user_id": user.id, "original_url": "https://example.com/active"},
+    )
+    assert created.status_code == 201
+    url_id = created.get_json()["id"]
+    short_code = created.get_json()["short_code"]
+
+    client.put(f"/urls/{url_id}", json={"is_active": False})
+
+    events_before_get = Event.select().count()
+    response = client.get(f"/{short_code}")
+
+    assert response.status_code == 410
+    assert response.get_json() == {"error": "Short URL is inactive"}
+    assert Event.select().count() == events_before_get
+    assert "redirected" not in [e.event_type for e in Event.select()]
+
+
+def test_create_user_rejects_json_string_body(client, test_db):
+    response = client.post(
+        "/users",
+        data='"only-a-string"',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"errors": {"payload": "JSON object required"}}
+
+
+def test_update_user_rejects_extra_unknown_fields(client, test_db):
+    user = User.create(username="strict", email="strict@example.com")
+
+    response = client.put(
+        f"/users/{user.id}",
+        json={"username": "newname", "email": "strict@example.com", "is_admin": True},
+    )
+
+    assert response.status_code == 400
+    assert "Only username and email" in response.get_json()["errors"]["payload"]
+
+
+def test_update_url_rejects_extra_unknown_fields(client, test_db):
+    user = User.create(username="urlstrict", email="urlstrict@example.com")
+    url_entry = Url.create(
+        user=user,
+        short_code="exFld1",
+        original_url="https://example.com/extra-field",
+        is_active=True,
+    )
+
+    response = client.put(
+        f"/urls/{url_entry.id}",
+        json={"title": "ok", "short_code": "hijack"},
+    )
+
+    assert response.status_code == 400
+    assert "Only title, is_active and original_url" in response.get_json()["errors"]["payload"]
+
+
+def test_create_url_rejects_non_http_scheme(client, test_db):
+    user = User.create(username="scheme", email="scheme@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "ftp://files.example.com/x",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["original_url"] == "original_url must be a valid http/https URL"
+
+
+def test_list_urls_rejects_non_integer_user_id_query(client, test_db):
+    response = client.get("/urls?user_id=not-an-int")
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
 
 
 def test_unknown_route_returns_json_404(client, test_db):

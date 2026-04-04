@@ -18,12 +18,21 @@ class Event(BaseModel):
 
     @classmethod
     def create_event(cls, *, url, user, event_type, details):
-        return cls.create(
-            url=url,
-            user=user,
-            event_type=event_type,
-            details=json.dumps(details),
-        )
+        from app.event_pipeline import enqueue
+
+        if not isinstance(details, dict):
+            details = {}
+
+        url_id = getattr(url, "id", None) if url is not None else None
+        if isinstance(user, int):
+            user_id = user
+        elif user is None:
+            user_id = None
+        else:
+            user_id = getattr(user, "id", None)
+
+        enqueue(url_id, user_id, event_type, details)
+        return None
 
     def to_dict(self):
         try:

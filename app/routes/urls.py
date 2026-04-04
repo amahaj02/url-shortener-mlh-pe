@@ -1,15 +1,17 @@
+import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
+from app.database import db
+from app.json_request import require_json_object
 from app.models.event import Event
 from app.models.url import Url
-from app.models.user import User
 
 urls_bp = Blueprint("urls", __name__)
-MAX_SHORT_CODE_ATTEMPTS = 5
+logger = logging.getLogger(__name__)
 
 
 def _is_valid_url(value):
@@ -28,11 +30,16 @@ def _resolve_user_id(url_entry):
     return getattr(user, "id", None)
 
 
+def _is_user_fk_violation(error):
+    message = str(error).lower()
+    return "foreign key" in message or "url_user_id_fkey" in message
+
+
 @urls_bp.route("/urls", methods=["POST"])
 def create_url():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify(errors={"payload": "JSON object required"}), 400
+    payload, err = require_json_object()
+    if err:
+        return err
 
     user_id = payload.get("user_id")
     original_url = payload.get("original_url")
@@ -49,26 +56,19 @@ def create_url():
         return jsonify(errors=errors), 400
 
     try:
-        User.get_by_id(user_id)
-    except User.DoesNotExist:
-        return jsonify(error="User not found"), 404
+        url_entry = Url.create(
+            user=user_id,
+            original_url=original_url.strip(),
+            title=title.strip() if isinstance(title, str) else None,
+            is_active=True,
+        )
+    except IntegrityError as error:
+        if _is_user_fk_violation(error):
+            return jsonify(error="User not found"), 404
+        return jsonify(errors={"url": "Could not create URL"}), 400
 
-    url_entry = None
-    for _attempt in range(MAX_SHORT_CODE_ATTEMPTS):
-        try:
-            url_entry = Url.create(
-                user=user_id,
-                short_code=Url.generate_short_code(),
-                original_url=original_url.strip(),
-                title=title.strip() if isinstance(title, str) else None,
-                is_active=True,
-            )
-            break
-        except IntegrityError:
-            continue
-
-    if url_entry is None:
-        return jsonify(errors={"url": "Could not create URL"}), 503
+    url_entry.short_code = Url.short_code_from_id(url_entry.id)
+    url_entry.save(only=[Url.short_code])
 
     Event.create_event(
         url=url_entry,
@@ -79,6 +79,7 @@ def create_url():
             "original_url": url_entry.original_url,
         },
     )
+    logger.info("url created id=%s short_code=%s", url_entry.id, url_entry.short_code)
 
     return jsonify(url_entry.to_dict()), 201
 
@@ -95,7 +96,7 @@ def list_urls():
             return jsonify(errors={"user_id": "user_id must be an integer"}), 400
         query = query.where(Url.user == user_id_num)
 
-    return jsonify([url_entry.to_dict() for url_entry in query])
+    return jsonify([url_entry.to_dict() for url_entry in query.iterator()])
 
 
 @urls_bp.route("/urls/<int:url_id>", methods=["GET"])
@@ -110,8 +111,10 @@ def get_url(url_id):
 
 @urls_bp.route("/urls/<int:url_id>", methods=["PUT"])
 def update_url(url_id):
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict) or not payload:
+    payload, err = require_json_object()
+    if err:
+        return err
+    if not payload:
         return jsonify(errors={"payload": "JSON object with updatable fields is required"}), 400
 
     allowed = {"title", "is_active", "original_url"}
@@ -142,7 +145,9 @@ def update_url(url_id):
         url_entry.original_url = payload["original_url"].strip()
 
     url_entry.updated_at = datetime.utcnow()
-    url_entry.save()
+
+    with db.atomic():
+        url_entry.save()
 
     Event.create_event(
         url=url_entry,
@@ -155,6 +160,7 @@ def update_url(url_id):
             "title": url_entry.title,
         },
     )
+    logger.info("url updated id=%s", url_id)
 
     return jsonify(url_entry.to_dict())
 

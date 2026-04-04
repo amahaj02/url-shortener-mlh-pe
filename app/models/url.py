@@ -1,5 +1,3 @@
-import random
-import string
 from datetime import datetime
 
 from peewee import AutoField, BooleanField, CharField, DateTimeField, ForeignKeyField, TextField
@@ -7,11 +5,18 @@ from peewee import AutoField, BooleanField, CharField, DateTimeField, ForeignKey
 from app.database import BaseModel
 from app.models.user import User
 
+SHORT_CODE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 
 class Url(BaseModel):
+    class Meta:
+        indexes = (
+            (("user", "id"), False),
+        )
+
     id = AutoField()
     user = ForeignKeyField(User, backref="urls", on_delete="CASCADE")
-    short_code = CharField(unique=True)
+    short_code = CharField(unique=True, null=True)
     original_url = TextField()
     title = CharField(null=True)
     is_active = BooleanField(default=True)
@@ -19,9 +24,19 @@ class Url(BaseModel):
     updated_at = DateTimeField(default=datetime.utcnow)
 
     @classmethod
-    def generate_short_code(cls, length=6):
-        alphabet = string.ascii_letters + string.digits
-        return "".join(random.choices(alphabet, k=length))
+    def short_code_from_id(cls, row_id):
+        if not isinstance(row_id, int) or row_id < 1:
+            raise ValueError("row_id must be a positive integer")
+
+        base = len(SHORT_CODE_ALPHABET)
+        value = row_id
+        encoded = []
+
+        while value > 0:
+            value, remainder = divmod(value, base)
+            encoded.append(SHORT_CODE_ALPHABET[remainder])
+
+        return "".join(reversed(encoded))
 
     def to_dict(self):
         return {

@@ -18,7 +18,7 @@ def app():
 
 
 @pytest.fixture
-def test_db():
+def test_db(app):
     if db.is_closed():
         db.connect(reuse_if_open=True)
     db.create_tables(ALL_MODELS, safe=True)
