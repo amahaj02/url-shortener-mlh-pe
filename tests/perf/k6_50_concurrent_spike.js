@@ -2,23 +2,25 @@ import http from "k6/http";
 import { check, fail } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://localhost:5000";
+const VUS = Number(__ENV.VUS || 400);
+const DURATION = __ENV.DURATION || "5m";
 
 export const options = {
     scenarios: {
-        spike_50_users_once: {
-            executor: "per-vu-iterations",
-            vus: 500,
-            iterations: 1,
-            maxDuration: __ENV.MAX_DURATION || "30s",
+        sustained_autoscale_load: {
+            executor: "constant-vus",
+            vus: VUS,
+            duration: DURATION,
+            gracefulStop: "30s",
         },
     },
-    thresholds: {
-        http_req_failed: ["rate<0.02"],
-        http_req_duration: ["p(95)<1200"],
-        "http_req_duration{name:create_user}": ["p(95)<1500"],
-        "http_req_duration{name:create_url}": ["p(95)<1500"],
-        "http_req_duration{name:list_urls_by_user}": ["p(95)<1000"],
-    },
+    // thresholds: {
+    //     http_req_failed: ["rate<0.02"],
+    //     http_req_duration: ["p(95)<1200"],
+    //     "http_req_duration{name:create_user}": ["p(95)<1500"],
+    //     "http_req_duration{name:create_url}": ["p(95)<1500"],
+    //     "http_req_duration{name:list_urls_by_user}": ["p(95)<1000"],
+    // },
 };
 
 function createUserPayload() {

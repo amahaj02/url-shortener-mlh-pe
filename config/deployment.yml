@@ -5,7 +5,7 @@ metadata:
   labels:
     app: url-shortener
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: url-shortener
@@ -50,39 +50,45 @@ spec:
               value: "8000"
             - name: HOME
               value: "/tmp"
+            - name: GUNICORN_TIMEOUT
+              value: "60"
+            - name: GUNICORN_GRACEFUL_TIMEOUT
+              value: "60"
+            - name: GUNICORN_MAX_REQUESTS
+              value: "0"
             - name: DATABASE_MAX_CONNECTIONS
-              value: "5"
+              value: "3"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
               value: "1"
           readinessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           startupProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 5
-            timeoutSeconds: 2
-            failureThreshold: 12
+            timeoutSeconds: 5
+            failureThreshold: 24
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            timeoutSeconds: 2
-            failureThreshold: 3
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
           resources:
             requests:
-              cpu: 250m
+              cpu: 350m
               memory: 256Mi
             limits:
-              cpu: 700m
+              cpu: "1"
               memory: 768Mi
 ---
 apiVersion: v1
@@ -108,12 +114,25 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: url-shortener
-  minReplicas: 3
-  maxReplicas: 4
+  minReplicas: 1
+  maxReplicas: 6
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 45
