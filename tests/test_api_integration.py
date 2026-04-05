@@ -826,29 +826,6 @@ def test_clear_db_get_returns_admin_help(client, test_db):
     }
 
 
-def test_chaos_500_route_returns_404_when_disabled(client, test_db):
-    response = client.get("/admin/chaos/500")
-
-    assert response.status_code == 404
-    assert response.get_json() == {"error": "Not found"}
-
-
-def test_chaos_500_route_returns_500_when_enabled_and_authorized(client, test_db, monkeypatch):
-    monkeypatch.setenv("CHAOS_MODE", "true")
-    monkeypatch.setenv("CHAOS_TOKEN", "secret-token")
-
-    response = client.get(
-        "/admin/chaos/500",
-        headers={"X-Chaos-Token": "secret-token"},
-    )
-
-    assert response.status_code == 500
-    assert response.get_json() == {
-        "error": "Chaos mode: forced internal server error",
-        "code": "CHAOS_500",
-    }
-
-
 def test_internal_server_error_returns_json_response(test_db):
     app = create_app(testing=True)
     app.config["PROPAGATE_EXCEPTIONS"] = False

@@ -1,6 +1,4 @@
-import os
-
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
 from peewee import SqliteDatabase
 
 from app.cache import clear_namespace
@@ -8,13 +6,6 @@ from app.database import db
 from app.models import ALL_MODELS
 
 maintenance_bp = Blueprint("maintenance", __name__)
-
-
-def _env_bool(name, default=False):
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @maintenance_bp.route("/admin/clear-db", methods=["GET"])
@@ -54,23 +45,4 @@ def clear_database():
         message="Database cleared",
         deleted=deleted,
         total_deleted=sum(deleted.values()),
-    )
-
-
-@maintenance_bp.route("/admin/chaos/500", methods=["GET"])
-def chaos_500():
-    if not _env_bool("CHAOS_MODE", default=False):
-        return jsonify(error="Not found"), 404
-
-    expected_token = os.getenv("CHAOS_TOKEN", "").strip()
-    provided_token = request.headers.get("X-Chaos-Token", "").strip()
-    if not expected_token or provided_token != expected_token:
-        return jsonify(error="Forbidden"), 403
-
-    return (
-        jsonify(
-            error="Chaos mode: forced internal server error",
-            code="CHAOS_500",
-        ),
-        500,
     )
