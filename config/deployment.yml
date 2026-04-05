@@ -142,7 +142,7 @@ spec:
         kind: Deployment
         name: url-shortener
     minReplicas: 3
-    maxReplicas: 7
+    maxReplicas: 3
     behavior:
         scaleUp:
             stabilizationWindowSeconds: 0

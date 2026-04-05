@@ -270,34 +270,25 @@ def delete_url(url_id):
 
 @redirect_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_url(short_code):
-    cached = get_short_link(short_code)
-    cache_hit = cached is not None
-    url_entry = None
-
-    if cached is not None:
-        try:
-            url_entry = Url.get_by_id(cached["id"])
-        except Url.DoesNotExist:
-            delete_short_link(short_code)
-            return jsonify(error="Resource not found"), 404
-        if url_entry.short_code != short_code:
-            delete_short_link(short_code)
-            try:
-                url_entry = Url.get(Url.short_code == short_code)
-            except Url.DoesNotExist:
-                return jsonify(error="Resource not found"), 404
-            if url_entry.is_active:
-                set_short_link(url_entry)
-    else:
-        try:
-            url_entry = Url.get(Url.short_code == short_code)
-        except Url.DoesNotExist:
-            return jsonify(error="Resource not found"), 404
-        if url_entry.is_active:
-            set_short_link(url_entry)
+    """Resolve redirects from the database so is_active is never stale vs Redis."""
+    try:
+        url_entry = Url.get(Url.short_code == short_code)
+    except Url.DoesNotExist:
+        return jsonify(error="Resource not found"), 404
 
     if not url_entry.is_active:
         return jsonify(error="Short URL is inactive"), 410
+
+    cached = get_short_link(short_code)
+    cache_hit = cached is not None
+    if cached and cached.get("original_url"):
+        destination = cached["original_url"]
+        if destination != url_entry.original_url:
+            destination = url_entry.original_url
+            set_short_link(url_entry)
+    else:
+        destination = url_entry.original_url
+        set_short_link(url_entry)
 
     Event.create_event(
         url=url_entry,
@@ -305,7 +296,7 @@ def redirect_short_url(short_code):
         event_type="click",
         details={
             "short_code": url_entry.short_code,
-            "original_url": url_entry.original_url,
+            "original_url": destination,
             "ip_address": _event_client_ip(),
             "user_agent": request.headers.get("User-Agent")
             or (request.user_agent.string if request.user_agent else "")
@@ -325,5 +316,5 @@ def redirect_short_url(short_code):
     )
 
     response = make_response("", 302)
-    response.headers["Location"] = url_entry.original_url
+    response.headers["Location"] = destination
     return response
