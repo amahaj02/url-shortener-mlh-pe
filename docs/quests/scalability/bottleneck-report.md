@@ -1,113 +1,91 @@
 # Bottleneck Report
 
-This report is the short version of what we learned while pushing the app from "works locally" to "can survive real traffic without immediately falling over."
-
 ## Rubric summary (2–3 sentences for submission)
 
-The hottest path was **`GET /<short_code>`**: every redirect used to hit Postgres for the same short codes repeatedly. We added **Redis-backed caching** for redirect resolution (`app/cache.py`) so repeat lookups avoid the database, and we kept **observability** (logs with `cache_hit`, metrics) to prove cache hits and find the next bottleneck. Under load tests (**500+ VUs** with **`http_req_failed` &lt; 5%**), the system stayed stable because the DB was no longer doing redundant read work on every click.
+The worst steady-state waste was on **`GET /<short_code>`**: every redirect used to resolve the short code in Postgres on every request. We moved to **Redis-first** resolution (`app/cache.py`, `app/routes/urls.py`) with **`cache_hit`** in logs so we can prove hits under load. We still had to align **database pool size**, **Gunicorn threads**, **Kubernetes requests**, and **k6 pass/fail bars** with reality: a small cluster cannot absorb unlimited concurrent clients, so we tuned pools and load tests instead of treating every timeout as a cache bug.
 
-## What We Tested
+---
 
-Our baseline load test was the mixed k6 workflow in `tests/perf/k6_concurrent_spike.js` (default **50 VUs**; higher tiers use the same script with **`VUS=200`**, **`500`**, or **`1000`**). It exercises the main write/read paths that matter most for this app:
+## 1. What we were trying to prove
 
-- creating users
-- creating short URLs
-- listing URLs by user
+- **Baseline:** mixed read/write traffic (`tests/perf/k6_concurrent_spike.js`) at **50 concurrent users** (ramp mode: `VU_RAMP=1`, `VUS=50`).
+- **Scale checkpoints:** same script at **200** and **500** VUs to see latency and **http_req_failed** stay healthy.
+- **Gold / tsunami:** **500+ VUs**, redirect-heavy tests (`tests/perf/k6_redis_redirect_cache.js`), and **error rate under 5%** with evidence of caching.
 
-Later runs increased concurrency with the 200, 500, and 1000 VU variants. We also paid special attention to the redirect path because that is the highest-frequency read in a URL shortener and the most obvious place to burn database capacity unnecessarily.
+Recorded numbers for the ramped runs live in [LOAD_TEST_BASELINE.md](../../LOAD_TEST_BASELINE.md).
 
-## What We Saw First
+---
 
-The first useful signal was that average latency and even p95 latency could look fine while a small number of requests still timed out. That was an important clue.
+## 2. Hot path: redirects and the database
 
-This told us the problem was probably not "the whole system is slow all the time." It looked more like a queueing or hotspot issue:
+**Symptom:** Under concurrency, Postgres and connection pools became the obvious limiter. Redirects are the highest-frequency read in a URL shortener; doing a DB lookup on every click duplicates work for popular links.
 
-- most requests were still moving through quickly
-- a few requests were getting stuck long enough to hit client timeouts
-- the failures showed up more often on write-heavy paths and on repeated redirect/read traffic
+**Change:** **Redis-first** lookup for short codes: try cache, fall back to DB, then repopulate cache. Cache keys are normalized (e.g. lowercased) so behavior stays consistent.
 
-That pushed us away from guessing and toward instrumenting the app properly.
+**Observation:** Redirects are **not** “read-only” in the sense of zero writes. Each redirect still participates in **click analytics**: events are **batched** (`app/event_pipeline.py`) rather than one synchronous `INSERT` per request. If redirect volume spikes, tune **`EVENT_BATCH_SIZE`** and **`EVENT_FLUSH_INTERVAL_SEC`**—batching shifts pressure from per-request latency to flush throughput and DB write bursts.
 
-## Where The Pressure Was Coming From
+---
 
-The biggest avoidable bottleneck was the redirect path.
+## 3. Database connections vs app threads
 
-Originally, every `GET /<short_code>` required a database lookup. That is fine at low traffic, but it is wasteful for a service where popular links get hit over and over again. The app was asking Postgres the same question repeatedly even when the answer was small, stable, and easy to cache.
+Postgres exposes a hard **`max_connections`** budget (e.g. on the order of **~197** in our environment). The app uses a **Peewee pool per worker** sized by **`DATABASE_MAX_CONNECTIONS`** (see `config/deployment.yml`).
 
-That meant the database was doing repetitive read work for hot links while also serving write-heavy endpoints such as:
+Rough ceiling for app traffic:
 
-- `POST /users`
-- `POST /urls`
-- `GET /urls?user_id=...`
+**`replicas × WEB_CONCURRENCY × DATABASE_MAX_CONNECTIONS`**
 
-So the database was not just the system of record. It was also being treated like a low-latency cache, which is exactly the kind of design that starts to hurt once concurrency increases.
+With **HPA max 3** replicas, **`WEB_CONCURRENCY=1`**, and **`DATABASE_MAX_CONNECTIONS=48`**, that is about **144** concurrent DB connections from the app—intentionally **below** `max_connections` so admin tools, migrations, and other clients still fit.
 
-## How We Confirmed It
+If you add replicas or workers without revisiting **`max_connections`** or a **PgBouncer / managed pool** in front of Postgres, you risk **`too many connections`** or connection churn. The bottleneck report is not “raise threads forever”; it is **match pool + replicas to the database’s contract**.
 
-We added observability before trying to "optimize" blindly.
+---
 
-The changes that helped us reason about the issue were:
+## 4. Gunicorn: threads and the pool
 
-- structured request logs
-- request IDs for correlation
-- Prometheus request metrics
-- SQL timing logs
-- Grafana dashboards and alerts
+We run **`WEB_CONCURRENCY=1`** with **`GUNICORN_THREADS`** in the **60s** so one worker process can handle many concurrent requests.
 
-That gave us a much clearer picture:
+**`GUNICORN_THREADS_CAP_TO_POOL`** (in `deployment/gunicorn.conf.py`) controls whether thread count is capped to the DB pool size. **Capping** avoids over-committing threads relative to connections; **disabling the cap** lets more threads **share** the same pool—threads block on the pool when busy, which can be acceptable when **Redis-first redirects** reduce how often requests need a DB slot. We documented this tradeoff in [capacity-plan.md](../../capacity-plan.md) and [CONFIG_REFERENCE.md](../../CONFIG_REFERENCE.md).
 
-- if latency rose while traffic stayed steady, we were likely saturating part of the stack rather than seeing a simple external spike
-- if CPU climbed and a few requests timed out, worker queueing became more plausible
-- if redirect traffic stayed hot and the same short codes were being resolved repeatedly, cache absence was an obvious inefficiency
+Misinterpreting this shows up as **queueing**: p95 looks fine while some requests **stall** or hit **dial / i/o timeouts** because the offered concurrency from k6 exceeds what the pod can drain.
 
-The result was not one dramatic smoking gun log line. It was a pattern: repeated read traffic was needlessly hitting Postgres, and under concurrent load that increased pressure on the same backend that also needed to handle writes.
+---
 
-## What We Changed
+## 5. Kubernetes: HPA and scheduling the third replica
 
-We made the redirect path cheaper and gave the service more room to breathe.
+We use **HPA** (e.g. min **2**, max **3** replicas) so the service can scale under CPU/memory pressure.
 
-The main changes were:
+**What we hit:** A **third** pod can stay **`Pending`** with **Insufficient cpu** or **Insufficient memory** on small nodes if **resource requests** are too high relative to what the node has left after system workloads.
 
-- Redis-backed caching for short-code redirects in `app/cache.py`
-- redirect logic updated to read from cache and repopulate it on misses
-- Kubernetes deployment with multiple replicas behind a `LoadBalancer`
-- HPA-based scaling so the app could add pods under CPU pressure
-- structured metrics and logs so we could tell whether a slowdown was caused by CPU, request backlog, or database pressure
+**Mitigation we aligned with:** **Lower CPU/memory requests** (e.g. **750m** CPU, **1280Mi** memory requests in `config/deployment.yml`) so a third replica can **schedule** on typical small nodes, while **limits** still allow burst headroom. This is a scheduling bottleneck, not an application bug—if the pod cannot land, HPA cannot help.
 
-This was the right tradeoff for the app we built. We did not need a complicated redesign. We needed to stop doing unnecessary repeated reads against the primary datastore.
+---
 
-## What Improved
+## 6. Load testing: k6 thresholds and “false failures”
 
-After adding the cache and keeping the service scaled behind Kubernetes, the architecture made a lot more sense for the workload:
+We share scenarios in **`tests/perf/k6_write_spike_shared.js`**.
 
-- hot redirect reads no longer had to go to Postgres every time
-- the database could spend more of its budget on writes and uncached lookups
-- the service had better headroom as concurrency increased
-- we had enough telemetry to explain performance problems instead of just describing symptoms
+**Failure rate:** **`MAX_HTTP_FAILED_RATE`** defaults to **5%** (`0.05`) so the k6 threshold matches the rubric’s **under 5% errors** language.
 
-This is also why Redis was a good fit here. The cached object is small, the lookup key is stable, and the read pattern is exactly the sort of thing caches are meant to absorb.
+**Latency:** A single global **p(95) under 500ms** threshold **fails** honest runs at **200** or **500** VUs even when the system is healthy—queueing and tail latency rise with offered load. We implemented **tiered p(95) bars** by target **`VUS`** (ramp) and **`HTTP_REQ_PER_SEC`** (arrival), with optional overrides **`K6_HTTP_P95_MS`**, **`K6_HTTP_P95_MS_RAMP`**, **`K6_HTTP_P95_MS_ARRIVAL`** (documented in that file and `.env.example`). The goal is to **fail** on real regressions, not on “strict bar at every scale.”
 
-## What Still Limits The System
+**Timeouts under extreme VUs:** Seeing **`dial: i/o timeout`** alongside **memory pressure** often means the **load generator opened more parallel work than the service could accept**—requests pile up at the LB/OS, not necessarily that Redis is broken. **500 VUs** is a **stress probe** after smaller runs pass; see [capacity-plan.md](../../capacity-plan.md).
 
-The cache helps a lot, but it does not make the app infinitely scalable.
+---
 
-The likely limits are still:
+## 7. Symptoms vs root causes (quick map)
 
-1. database connection budget
-2. CPU saturation during write-heavy bursts
-3. worker queueing when a few requests become slow
-4. cache miss rate on cold or uneven traffic
+| What we saw | Plausible cause | What we checked / changed |
+|-------------|-------------------|---------------------------|
+| High redirect latency, repeated DB work for same short code | No cache on hot reads | Redis-first path, `cache_hit` logs |
+| `too many connections` / pool exhaustion | Pool × replicas × workers vs `max_connections` | `DATABASE_MAX_CONNECTIONS`, replica count, PgBouncer docs |
+| Good p95 but scattered timeouts | Queueing, thread/pool mismatch | `GUNICORN_THREADS`, `GUNICORN_THREADS_CAP_TO_POOL`, offered load vs capacity |
+| Third replica Pending | Node cannot fit requests | Lower **requests** or larger nodes |
+| k6 fails only on p(95) at high VUs | Threshold too strict for scale | Tiered **`K6_HTTP_P95_MS_*`** in shared k6 |
 
-So the main lesson was not "Redis solved everything." The lesson was that the first real bottleneck was unnecessary database work on the hottest read path, and fixing that gave us a cleaner foundation for higher-concurrency testing.
+---
 
-## Bottom Line
+## 8. Bottom line
 
-The bottleneck we chose to address first was the redirect path hitting Postgres on every request.
+The **first architectural win** was stopping Postgres from answering the same redirect question on every click. The **ongoing work** was **capacity hygiene**: pool and replica math against **`max_connections`**, honest **Gunicorn** threading vs the pool, **Kubernetes** requests that let HPA add pods, and **load tests** whose thresholds reflect scale—not a single latency number copied from a laptop baseline.
 
-That was the highest-leverage fix because:
-
-- it removed repetitive read pressure from the database
-- it helped the app behave more predictably under concurrency
-- it made the system easier to reason about during load tests
-
-For this project, that was the difference between a basic API that works and a service that starts to look operationally credible under sustained traffic.
+For deeper deployment and env tuning, use [capacity-plan.md](../../capacity-plan.md) and [CONFIG_REFERENCE.md](../../CONFIG_REFERENCE.md).

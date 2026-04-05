@@ -11,6 +11,7 @@
  *   k6 run tests/perf/k6_concurrent_spike.js
  *   HTTP_REQ_PER_SEC=150 DURATION=3m BASE_URL=https://… k6 run tests/perf/k6_concurrent_spike.js
  *   VU_RAMP=1 VUS=500 DURATION=3m BASE_URL=https://… k6 run tests/perf/k6_concurrent_spike.js
+ *   # Optional p95 bar (ms): tiered by VUS/HTTP_REQ_PER_SEC by default; override with -e K6_HTTP_P95_MS=900
  *
  * @see k6_write_spike_shared.js
  */

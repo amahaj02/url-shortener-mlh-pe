@@ -24,6 +24,9 @@ def test_concurrent_spike_wires_shared_defaults():
     assert '"X-Request-ID": requestId(' in shared
     assert 'executor: "constant-arrival-rate"' in shared
     assert 'executor: "ramping-vus"' in shared
+    assert "p95MsForRamp" in shared
+    assert "p95MsForArrival" in shared
+    assert "K6_HTTP_P95_MS" in shared
 
     redis_redirect = (perf_dir / "k6_redis_redirect_cache.js").read_text(encoding="utf-8")
     assert "USE_VU_RAMP" in redis_redirect

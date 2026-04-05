@@ -11,12 +11,78 @@
  *   MAX_HTTP_FAILED_RATE — k6 threshold for http_req_failed, e.g. 0.05 (5%). Default 0.05 (5%).
  *   HTTP_REQ_PER_SEC — with constant-arrival mode: target HTTP requests/s (default 100). Each iteration issues 8 requests, so k6 schedules rate iterations per 8s (= rate HTTP/s).
  *   PRE_ALLOCATED_VUS / MAX_VUS — arrival mode only; pool size for constant-arrival-rate (defaults 150 / 800).
+ *
+ * p(95) latency thresholds (ms), passed to k6 as -e VAR=value:
+ *   K6_HTTP_P95_MS — if set, overrides all p95 thresholds (single bar for every step).
+ *   K6_HTTP_P95_MS_RAMP — ramp mode only: overrides tiered default when K6_HTTP_P95_MS is unset.
+ *   K6_HTTP_P95_MS_ARRIVAL — arrival mode only: overrides tiered default when K6_HTTP_P95_MS is unset.
+ *   Defaults when unset: ramp tiers by target VUS (VUS env): <100 → 500, <200 → 750, <400 → 1000, else 1500.
+ *   Arrival tiers by HTTP_REQ_PER_SEC: <150 → 500, <300 → 750, else 1000.
  */
 
 import http from "k6/http";
 import { check, fail } from "k6";
 
 const BASE_URL = (__ENV.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+
+function parsePositiveMs(raw) {
+    if (raw === undefined || raw === null || String(raw).trim() === "") {
+        return null;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+        return null;
+    }
+    return Math.floor(n);
+}
+
+/** @returns {number} */
+export function p95MsGlobalOverride() {
+    return parsePositiveMs(__ENV.K6_HTTP_P95_MS);
+}
+
+/** Target VUs at end of ramp (from VUS env or default). @returns {number} */
+export function p95MsForRamp(targetVus) {
+    const global = p95MsGlobalOverride();
+    if (global !== null) {
+        return global;
+    }
+    const rampOnly = parsePositiveMs(__ENV.K6_HTTP_P95_MS_RAMP);
+    if (rampOnly !== null) {
+        return rampOnly;
+    }
+    const v = Math.max(1, Number(targetVus) || 1);
+    if (v >= 400) {
+        return 1500;
+    }
+    if (v >= 200) {
+        return 1000;
+    }
+    if (v >= 100) {
+        return 750;
+    }
+    return 500;
+}
+
+/** @param {number} httpReqPerSec */
+export function p95MsForArrival(httpReqPerSec) {
+    const global = p95MsGlobalOverride();
+    if (global !== null) {
+        return global;
+    }
+    const arrivalOnly = parsePositiveMs(__ENV.K6_HTTP_P95_MS_ARRIVAL);
+    if (arrivalOnly !== null) {
+        return arrivalOnly;
+    }
+    const r = Number(httpReqPerSec) || 100;
+    if (r >= 300) {
+        return 1000;
+    }
+    if (r >= 150) {
+        return 750;
+    }
+    return 500;
+}
 
 function maxHttpFailedRateForThreshold() {
     const raw = __ENV.MAX_HTTP_FAILED_RATE;
@@ -30,17 +96,18 @@ function maxHttpFailedRateForThreshold() {
     return String(n);
 }
 
-function writeSpikeThresholds(maxFail) {
+function writeSpikeThresholds(maxFail, p95Ms) {
+    const bar = `p(95)<${p95Ms}`;
     return {
         http_req_failed: [`rate<${maxFail}`],
-        http_req_duration: ["p(95)<500"],
-        "http_req_duration{name:create_user}": ["p(95)<500"],
-        "http_req_duration{name:create_url}": ["p(95)<500"],
-        "http_req_duration{name:list_urls_by_user}": ["p(95)<500"],
-        "http_req_duration{name:get_user}": ["p(95)<500"],
-        "http_req_duration{name:get_url}": ["p(95)<500"],
-        "http_req_duration{name:list_events}": ["p(95)<500"],
-        "http_req_duration{name:create_event}": ["p(95)<500"],
+        http_req_duration: [bar],
+        "http_req_duration{name:create_user}": [bar],
+        "http_req_duration{name:create_url}": [bar],
+        "http_req_duration{name:list_urls_by_user}": [bar],
+        "http_req_duration{name:get_user}": [bar],
+        "http_req_duration{name:get_url}": [bar],
+        "http_req_duration{name:list_events}": [bar],
+        "http_req_duration{name:create_event}": [bar],
     };
 }
 
@@ -58,6 +125,7 @@ export function buildWriteSpikeArrivalOptions(httpReqPerSec, defaultDuration) {
     const safeHttpPerSec = Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
     const pre = Math.max(1, Number(__ENV.PRE_ALLOCATED_VUS || 150));
     const maxV = Math.max(pre, Number(__ENV.MAX_VUS || 800));
+    const p95 = p95MsForArrival(safeHttpPerSec);
     return {
         scenarios: {
             arrival_http_target: {
@@ -69,7 +137,7 @@ export function buildWriteSpikeArrivalOptions(httpReqPerSec, defaultDuration) {
                 maxVUs: maxV,
             },
         },
-        thresholds: writeSpikeThresholds(maxFail),
+        thresholds: writeSpikeThresholds(maxFail, p95),
     };
 }
 
@@ -78,6 +146,7 @@ export function buildWriteSpikeOptions(defaultVus, defaultDuration) {
     const vus = Number(__ENV.VUS || String(defaultVus));
     const duration = __ENV.DURATION || defaultDuration;
     const maxFail = maxHttpFailedRateForThreshold();
+    const p95 = p95MsForRamp(vus);
     return {
         scenarios: {
             sustained_autoscale_load: {
@@ -87,7 +156,7 @@ export function buildWriteSpikeOptions(defaultVus, defaultDuration) {
                 gracefulRampDown: "30s",
             },
         },
-        thresholds: writeSpikeThresholds(maxFail),
+        thresholds: writeSpikeThresholds(maxFail, p95),
     };
 }
 
