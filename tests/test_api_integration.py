@@ -215,6 +215,61 @@ def test_create_url_short_code_is_generated_from_row_id(client, test_db):
     assert payload["short_code"] == Url.short_code_from_id(payload["id"])
 
 
+def test_create_url_is_idempotent_for_same_user_and_original_url(client, test_db):
+    user = User.create(username="idem", email="idem@example.com")
+
+    first = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/same",
+            "title": "First",
+        },
+    )
+    second = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/same",
+            "title": "Second try",
+        },
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    first_body = first.get_json()
+    second_body = second.get_json()
+    assert second_body["id"] == first_body["id"]
+    assert second_body["short_code"] == first_body["short_code"]
+    assert second_body["title"] == "First"
+    assert Url.select().where(Url.user == user.id, Url.original_url == "https://example.com/same").count() == 1
+
+
+def test_create_url_duplicate_inactive_returns_existing(client, test_db):
+    user = User.create(username="idem-inactive", email="idem-inactive@example.com")
+    existing = Url.create(
+        user=user,
+        short_code="in01",
+        original_url="https://example.com/dormant",
+        is_active=False,
+    )
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/dormant",
+            "title": "Ignored",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["id"] == existing.id
+    assert body["is_active"] is False
+    assert Url.select().where(Url.user == user.id, Url.original_url == "https://example.com/dormant").count() == 1
+
+
 def test_inactive_short_url_returns_gone(client, test_db):
     user = User.create(username="inactive", email="inactive@example.com")
     url_entry = Url.create(
@@ -306,7 +361,7 @@ def test_unknown_short_code_returns_404_without_recording_event(client, test_db)
     assert Event.select().count() == events_before
 
 
-def test_two_creations_same_destination_get_distinct_short_codes(client, test_db):
+def test_two_creations_same_destination_are_idempotent(client, test_db):
     user = User.create(username="twin", email="twin@example.com")
 
     first = client.post(
@@ -325,12 +380,11 @@ def test_two_creations_same_destination_get_distinct_short_codes(client, test_db
     )
 
     assert first.status_code == 201
-    assert second.status_code == 201
+    assert second.status_code == 200
     a, b = first.get_json(), second.get_json()
-    assert a["id"] != b["id"]
-    assert a["short_code"] != b["short_code"]
+    assert a["id"] == b["id"]
+    assert a["short_code"] == b["short_code"]
     assert a["short_code"] == Url.short_code_from_id(a["id"])
-    assert b["short_code"] == Url.short_code_from_id(b["id"])
 
 
 def test_create_url_rejects_non_numeric_user_id_string(client, test_db):

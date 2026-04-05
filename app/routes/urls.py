@@ -101,11 +101,22 @@ def create_url():
     if errors:
         return jsonify(errors=errors), 400
 
+    stripped_url = original_url.strip()
+    existing = (
+        Url.select()
+        .where((Url.user == user_id) & (Url.original_url == stripped_url))
+        .first()
+    )
+    if existing:
+        if existing.is_active:
+            set_short_link(existing)
+        return jsonify(existing.to_dict()), 200
+
     title = payload.get("title")
     try:
         url_entry = Url.create(
             user=user_id,
-            original_url=original_url.strip(),
+            original_url=stripped_url,
             title=_normalize_title(title) if title is not None else None,
             is_active=True,
         )
