@@ -5,6 +5,7 @@ import time
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from peewee import InterfaceError, OperationalError
+import psutil
 
 from app.cache import init_cache
 from app.database import close_db, connect_db, db, init_db
@@ -51,7 +52,7 @@ def create_app(testing=None):
     init_cache(app)
 
     if not effective_testing:
-        db_optional_endpoints = {"health"}
+        db_optional_endpoints = {"health", "metrics"}
 
         @app.before_request
         def _open_db_and_mark_start():
@@ -59,7 +60,15 @@ def create_app(testing=None):
                 return
             request._t0 = time.perf_counter()
             if request.endpoint and request.endpoint != "health":
-                logging.getLogger("app.http").debug("%s %s", request.method, request.path)
+                logging.getLogger("app.http").debug(
+                    "request_started",
+                    extra={
+                        "component": "http",
+                        "method": request.method,
+                        "path": request.path,
+                        "client_ip": _client_ip_for_log(),
+                    },
+                )
             connect_db()
 
         @app.after_request
@@ -69,12 +78,15 @@ def create_app(testing=None):
             if getattr(request, "_t0", None) is not None:
                 elapsed_ms = (time.perf_counter() - request._t0) * 1000.0
                 logging.getLogger("app.http").info(
-                    "%s %s %s %s %.2fms",
-                    _client_ip_for_log(),
-                    request.method,
-                    request.path,
-                    response.status_code,
-                    elapsed_ms,
+                    "request_completed",
+                    extra={
+                        "component": "http",
+                        "client_ip": _client_ip_for_log(),
+                        "method": request.method,
+                        "path": request.path,
+                        "status_code": response.status_code,
+                        "duration_ms": round(elapsed_ms, 2),
+                    },
                 )
             return response
 
@@ -89,6 +101,28 @@ def create_app(testing=None):
     @app.route("/health")
     def health():
         return jsonify(status="ok")
+
+    @app.route("/metrics")
+    def metrics():
+        process = psutil.Process()
+        virtual_memory = psutil.virtual_memory()
+
+        return jsonify(
+            cpu_percent=psutil.cpu_percent(interval=None),
+            memory={
+                "rss_bytes": process.memory_info().rss,
+                "vms_bytes": process.memory_info().vms,
+                "system_total_bytes": virtual_memory.total,
+                "system_available_bytes": virtual_memory.available,
+                "system_percent": virtual_memory.percent,
+            },
+            process={
+                "pid": process.pid,
+                "num_threads": process.num_threads(),
+                "open_files": len(process.open_files()),
+            },
+            status="ok",
+        )
 
     @app.errorhandler(404)
     def handle_404(_error):

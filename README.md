@@ -226,3 +226,44 @@ k6 run -e BASE_URL=http://localhost:3000 -e DURATION=60s tests/perf/k6_50_vus.js
 
 - The script uses `constant-vus` with `vus: 50` for the full duration.
 - Update `BASE_URL` if your API is not running on `localhost:3000`.
+
+## Observability Bronze
+
+### Structured JSON Logs
+
+- Application logs are emitted as JSON with:
+  - `timestamp`
+  - `level`
+  - `logger`
+  - `message`
+- HTTP request logs also include fields such as:
+  - `component`
+  - `client_ip`
+  - `method`
+  - `path`
+  - `status_code`
+  - `duration_ms`
+
+### Metrics
+
+- `GET /metrics` returns JSON with CPU and memory usage for the running process.
+
+Example:
+
+```bash
+curl http://localhost:3000/metrics
+```
+
+### Viewing Logs Without SSH
+
+- Kubernetes:
+
+```bash
+kubectl logs deployment/url-shortener --namespace=default -f
+```
+
+- k9s:
+  - open the pod or deployment
+  - press `l` to stream logs
+
+This gives you live structured logs without shelling into the container.
