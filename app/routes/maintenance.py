@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify
 
+from app.cache import clear_namespace
 from app.database import db
 from app.models import ALL_MODELS
 
@@ -22,6 +23,8 @@ def clear_database():
     with db.atomic():
         for model in reversed(ALL_MODELS):
             deleted[model.__name__.lower()] = model.delete().execute()
+
+    clear_namespace()
 
     return jsonify(
         message="Database cleared",
