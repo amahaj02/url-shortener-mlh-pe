@@ -8,6 +8,12 @@ A minimal hackathon starter template. You get the scaffolding and database wirin
 
 Use the seed files from the [MLH PE Hackathon](https://mlh-pe-hackathon.com) platform. They give you the schema/data needed for testing and submission. If anything is unclear, ask in Discord or the platform Q&A.
 
+## Demo video
+
+**Watch:** [demo on YouTube](https://youtu.be/RHzxVugXuT8)
+
+**Hey judges** — we forgot to put this on Devpost in time; please count this link as our demo. We’re going for **all the tracks** and we think we hit the requirements. Thanks for looking.
+
 ## Prerequisites
 
 - **uv** — a fast Python package manager that handles Python versions, virtual environments, and dependencies automatically.
@@ -232,17 +238,17 @@ k6 run -e BASE_URL=http://localhost:3000 -e DURATION=2m tests/perf/k6_concurrent
 ### Structured JSON Logs
 
 - Application logs are emitted as JSON with:
-  - `timestamp`
-  - `level`
-  - `logger`
-  - `message`
+    - `timestamp`
+    - `level`
+    - `logger`
+    - `message`
 - HTTP request logs also include fields such as:
-  - `component`
-  - `client_ip`
-  - `method`
-  - `path`
-  - `status_code`
-  - `duration_ms`
+    - `component`
+    - `client_ip`
+    - `method`
+    - `path`
+    - `status_code`
+    - `duration_ms`
 
 ### Metrics
 
@@ -263,8 +269,8 @@ kubectl logs deployment/url-shortener --namespace=default -f
 ```
 
 - k9s:
-  - open the pod or deployment
-  - press `l` to stream logs
+    - open the pod or deployment
+    - press `l` to stream logs
 
 This gives you live structured logs without shelling into the container.
 
@@ -274,10 +280,10 @@ This gives you live structured logs without shelling into the container.
 
 - Grafana dashboard JSON: [config/monitoring/grafana-dashboard-url-shortener.json](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/config/monitoring/grafana-dashboard-url-shortener.json)
 - Tracks the four golden signals:
-  - latency
-  - traffic
-  - errors
-  - saturation
+    - latency
+    - traffic
+    - errors
+    - saturation
 
 Import the dashboard JSON into Grafana, select your Prometheus data source, and use it for screenshots and live diagnosis.
 
