@@ -38,6 +38,21 @@ def _key(short_code: str) -> str:
     return f"{KEY_PREFIX}{short_code}"
 
 
+def _normalize_cached_is_active(value: Any) -> bool:
+    """Redis/JSON may yield bool, int 0/1, or string true/false."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in {"1", "true"}:
+            return True
+        if s in {"0", "false"}:
+            return False
+    return bool(value)
+
+
 def _ttl_seconds() -> int | None:
     raw = os.getenv("REDIS_CACHE_TTL_SECONDS")
     if raw is None or not str(raw).strip():
@@ -123,6 +138,8 @@ def get_short_link(short_code: str) -> dict[str, Any] | None:
     for field in ("id", "short_code", "original_url", "is_active", "user_id"):
         if field not in data:
             return None
+    data = dict(data)
+    data["is_active"] = _normalize_cached_is_active(data["is_active"])
     return data
 
 

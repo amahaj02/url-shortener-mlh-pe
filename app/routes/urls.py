@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, make_response, request
@@ -42,21 +41,6 @@ def _event_client_ip():
             if ip:
                 return ip
     return request.remote_addr
-
-
-def _coerce_cached_is_active(value):
-    """Normalize is_active from Redis/JSON (bool, int 0/1, str)."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value != 0
-    if isinstance(value, str):
-        s = value.strip().lower()
-        if s in {"1", "true"}:
-            return True
-        if s in {"0", "false"}:
-            return False
-    return bool(value)
 
 
 def _normalize_title(value):
@@ -258,7 +242,10 @@ def update_url(url_id):
         },
     )
 
-    set_short_link(url_entry)
+    if url_entry.is_active:
+        set_short_link(url_entry)
+    else:
+        delete_short_link(url_entry.short_code)
 
     return jsonify(url_entry.to_dict())
 
@@ -284,20 +271,30 @@ def delete_url(url_id):
 @redirect_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_url(short_code):
     cached = get_short_link(short_code)
+    cache_hit = cached is not None
+    url_entry = None
+
     if cached is not None:
-        url_entry = SimpleNamespace(
-            id=cached["id"],
-            short_code=cached["short_code"],
-            original_url=cached["original_url"],
-            is_active=_coerce_cached_is_active(cached["is_active"]),
-            user_id=cached.get("user_id"),
-        )
+        try:
+            url_entry = Url.get_by_id(cached["id"])
+        except Url.DoesNotExist:
+            delete_short_link(short_code)
+            return jsonify(error="Resource not found"), 404
+        if url_entry.short_code != short_code:
+            delete_short_link(short_code)
+            try:
+                url_entry = Url.get(Url.short_code == short_code)
+            except Url.DoesNotExist:
+                return jsonify(error="Resource not found"), 404
+            if url_entry.is_active:
+                set_short_link(url_entry)
     else:
         try:
             url_entry = Url.get(Url.short_code == short_code)
         except Url.DoesNotExist:
             return jsonify(error="Resource not found"), 404
-        set_short_link(url_entry)
+        if url_entry.is_active:
+            set_short_link(url_entry)
 
     if not url_entry.is_active:
         return jsonify(error="Short URL is inactive"), 410
@@ -310,7 +307,9 @@ def redirect_short_url(short_code):
             "short_code": url_entry.short_code,
             "original_url": url_entry.original_url,
             "ip_address": _event_client_ip(),
-            "user_agent": request.user_agent.string,
+            "user_agent": request.headers.get("User-Agent")
+            or (request.user_agent.string if request.user_agent else "")
+            or "",
         },
         immediate=True,
     )
@@ -321,7 +320,7 @@ def redirect_short_url(short_code):
             "component": "urls",
             "url_id": getattr(url_entry, "id", None),
             "short_code": url_entry.short_code,
-            "cache_hit": cached is not None,
+            "cache_hit": cache_hit,
         },
     )
 
