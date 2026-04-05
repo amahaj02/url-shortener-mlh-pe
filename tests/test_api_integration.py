@@ -115,7 +115,7 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     assert stored_url.original_url == "https://example.com/updated"
 
     events = list(Event.select().order_by(Event.id))
-    assert [event.event_type for event in events] == ["created", "updated", "redirected"]
+    assert [event.event_type for event in events] == ["created", "updated", "click"]
     assert events[-1].to_dict()["details"]["ip_address"] == "203.0.113.1"
 
 
@@ -330,7 +330,7 @@ def test_deactivated_url_returns_410_without_redirect_event(client, test_db):
     assert response.status_code == 410
     assert response.get_json() == {"error": "Short URL is inactive"}
     assert Event.select().count() == events_before_get
-    assert "redirected" not in [e.event_type for e in Event.select()]
+    assert "click" not in [e.event_type for e in Event.select()]
 
 
 def test_create_user_rejects_json_string_body(client, test_db):

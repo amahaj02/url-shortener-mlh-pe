@@ -195,13 +195,14 @@ def redirect_short_url(short_code):
     Event.create_event(
         url=url_entry,
         user=_resolve_user_id(url_entry),
-        event_type="redirected",
+        event_type="click",
         details={
             "short_code": url_entry.short_code,
             "original_url": url_entry.original_url,
             "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
             "user_agent": request.user_agent.string,
         },
+        immediate=True,
     )
 
     return redirect(url_entry.original_url, code=302)

@@ -75,5 +75,5 @@ def test_redirect_short_url_redirects_and_logs_event(client, monkeypatch):
     assert response.status_code == 302
     assert response.headers["Location"] == "https://example.com"
     assert len(events) == 1
-    assert events[0]["event_type"] == "redirected"
+    assert events[0]["event_type"] == "click"
     assert events[0]["url"] is url_entry

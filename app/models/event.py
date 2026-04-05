@@ -23,8 +23,8 @@ class Event(BaseModel):
         return json.dumps(details)
 
     @classmethod
-    def create_event(cls, *, url, user, event_type, details):
-        from app.event_pipeline import enqueue
+    def create_event(cls, *, url, user, event_type, details, immediate=False):
+        from app.event_pipeline import _insert_one_sync, enqueue
 
         if not isinstance(details, dict):
             details = {}
@@ -36,6 +36,10 @@ class Event(BaseModel):
             user_id = None
         else:
             user_id = getattr(user, "id", None)
+
+        if immediate:
+            _insert_one_sync(url_id, user_id, event_type, details)
+            return None
 
         enqueue(url_id, user_id, event_type, details)
         return None
