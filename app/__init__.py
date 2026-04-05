@@ -10,6 +10,7 @@ import psutil
 
 from app.cache import init_cache
 from app.database import close_db, connect_db, db, init_db
+from app.local_discord_log import init_local_discord_request_logging  # TEMP: delete with local_discord_log.py
 from app.logging_config import clear_log_context, configure_logging, set_log_context
 from app.routes import register_routes
 
@@ -63,6 +64,7 @@ def create_app(testing=None):
     close_db()
 
     init_cache(app)
+    init_local_discord_request_logging(app, testing=effective_testing)  # TEMP
 
     if not effective_testing:
         db_optional_endpoints = {"health", "metrics"}
