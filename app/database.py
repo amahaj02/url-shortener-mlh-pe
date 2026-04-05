@@ -1,9 +1,92 @@
+import logging
 import os
+import time
 
 from peewee import DatabaseProxy, Model, SqliteDatabase
 from playhouse.pool import PooledPostgresqlDatabase
 
+from app.logging_config import get_log_context
+
 db = DatabaseProxy()
+sql_logger = logging.getLogger("app.sql")
+
+
+def _env_bool(name, default=False):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name, default):
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return float(raw_value)
+    except ValueError:
+        return default
+
+
+def _sql_logging_enabled():
+    return _env_bool("SQL_LOG_ALL", default=False)
+
+
+def _sql_slow_ms():
+    return _env_float("SQL_LOG_SLOW_MS", default=100.0)
+
+
+def _statement_preview(sql):
+    compact = " ".join(str(sql).split())
+    if len(compact) <= 240:
+        return compact
+    return f"{compact[:237]}..."
+
+
+class LoggingSqlMixin:
+    def execute_sql(self, sql, params=None, commit=None):
+        started = time.perf_counter()
+        try:
+            if commit is None:
+                cursor = super().execute_sql(sql, params)
+            else:
+                try:
+                    cursor = super().execute_sql(sql, params, commit)
+                except TypeError:
+                    cursor = super().execute_sql(sql, params)
+        except Exception as error:
+            duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            extra = {
+                "component": "db",
+                "duration_ms": duration_ms,
+                "statement": _statement_preview(sql),
+                "params_count": len(params or ()),
+                "db_error": type(error).__name__,
+            }
+            extra.update(get_log_context())
+            sql_logger.exception("sql_query_failed", extra=extra)
+            raise
+
+        duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
+        if duration_ms >= _sql_slow_ms() or _sql_logging_enabled():
+            extra = {
+                "component": "db",
+                "duration_ms": duration_ms,
+                "statement": _statement_preview(sql),
+                "params_count": len(params or ()),
+                "slow_query": duration_ms >= _sql_slow_ms() or None,
+            }
+            extra.update(get_log_context())
+            sql_logger.info("sql_query_completed", extra=extra)
+        return cursor
+
+
+class LoggingSqliteDatabase(LoggingSqlMixin, SqliteDatabase):
+    pass
+
+
+class LoggingPooledPostgresqlDatabase(LoggingSqlMixin, PooledPostgresqlDatabase):
+    pass
 
 
 class BaseModel(Model):
@@ -16,14 +99,14 @@ def init_db(testing=False):
         db.close()
 
     if testing:
-        database = SqliteDatabase(
+        database = LoggingSqliteDatabase(
             "file:testing?mode=memory&cache=shared",
             uri=True,
             pragmas={"foreign_keys": 1},
             check_same_thread=False,
         )
     else:
-        database = PooledPostgresqlDatabase(
+        database = LoggingPooledPostgresqlDatabase(
             os.environ.get("DATABASE_NAME", "hackathon_db"),
             host=os.environ.get("DATABASE_HOST", "localhost"),
             port=int(os.environ.get("DATABASE_PORT", 5432)),

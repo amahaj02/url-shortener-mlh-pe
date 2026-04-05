@@ -23,6 +23,31 @@ export const options = {
     },
 };
 
+function requestId(prefix) {
+    const vu = typeof __VU !== "undefined" ? __VU : "setup";
+    const iter = typeof __ITER !== "undefined" ? __ITER : "setup";
+    return `${prefix}-${vu}-${iter}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function jsonRequestParams(name, prefix) {
+    return {
+        headers: {
+            "Content-Type": "application/json",
+            "X-Request-ID": requestId(prefix),
+        },
+        tags: { name },
+    };
+}
+
+function getRequestParams(name, prefix) {
+    return {
+        headers: {
+            "X-Request-ID": requestId(prefix),
+        },
+        tags: { name },
+    };
+}
+
 function createUserPayload() {
     const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     return {
@@ -32,7 +57,7 @@ function createUserPayload() {
 }
 
 export function setup() {
-    const healthRes = http.get(`${BASE_URL}/health`, { tags: { name: "health" } });
+    const healthRes = http.get(`${BASE_URL}/health`, getRequestParams("health", "health"));
     const ok = check(healthRes, {
         "GET /health preflight is 200": (r) => r.status === 200,
     });
@@ -42,10 +67,11 @@ export function setup() {
 }
 
 export default function () {
-    const createUserRes = http.post(`${BASE_URL}/users`, JSON.stringify(createUserPayload()), {
-        headers: { "Content-Type": "application/json" },
-        tags: { name: "create_user" },
-    });
+    const createUserRes = http.post(
+        `${BASE_URL}/users`,
+        JSON.stringify(createUserPayload()),
+        jsonRequestParams("create_user", "create-user"),
+    );
 
     check(createUserRes, {
         "POST /users is 201": (r) => r.status === 201,
@@ -65,8 +91,7 @@ export default function () {
             title: "k6 concurrent spike",
         }),
         {
-            headers: { "Content-Type": "application/json" },
-            tags: { name: "create_url" },
+            ...jsonRequestParams("create_url", "create-url"),
         },
     );
 
@@ -74,7 +99,10 @@ export default function () {
         "POST /urls is 201": (r) => r.status === 201,
     });
 
-    const listUserUrlsRes = http.get(`${BASE_URL}/urls?user_id=${user.id}`, { tags: { name: "list_urls_by_user" } });
+    const listUserUrlsRes = http.get(
+        `${BASE_URL}/urls?user_id=${user.id}`,
+        getRequestParams("list_urls_by_user", "list-urls"),
+    );
     check(listUserUrlsRes, {
         "GET /urls?user_id= is 200": (r) => r.status === 200,
     });
