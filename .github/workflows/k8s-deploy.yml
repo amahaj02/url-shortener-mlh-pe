@@ -49,9 +49,6 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
 
-            - name: Install Helm
-              uses: azure/setup-helm@v4
-
             - name: Install doctl
               uses: digitalocean/action-doctl@v2
               with:
@@ -124,37 +121,7 @@ jobs:
               run: kubectl rollout status deployment/url-shortener --namespace=default --timeout=180s
 
             - name: Apply monitoring manifests
-              run: |
-                  kubectl apply -f config/monitoring/url-shortener-monitoring.yml
-                  kubectl apply -f config/monitoring/grafana-dashboard-configmap.yml
-                  kubectl apply -f config/monitoring/grafana-alerting-policies-configmap.yml
-
-            - name: Render Grafana contact point secret
-              env:
-                  GRAFANA_DISCORD_WEBHOOK_URL: ${{ secrets.GRAFANA_DISCORD_WEBHOOK_URL }}
-              run: |
-                  if [ -z "$GRAFANA_DISCORD_WEBHOOK_URL" ]; then
-                    echo "GRAFANA_DISCORD_WEBHOOK_URL GitHub secret is required but not set"
-                    exit 1
-                  fi
-                  if [ "$GRAFANA_DISCORD_WEBHOOK_URL" = "<GRAFANA_DISCORD_WEBHOOK_URL>" ]; then
-                    echo "GRAFANA_DISCORD_WEBHOOK_URL still has the placeholder value"
-                    exit 1
-                  fi
-                  sed -e "s|<GRAFANA_DISCORD_WEBHOOK_URL>|${GRAFANA_DISCORD_WEBHOOK_URL}|" \
-                      config/monitoring/grafana-contact-points-secret.yml > /tmp/grafana-contact-points-secret.yml
-
-            - name: Apply Grafana contact point secret
-              run: kubectl apply -f /tmp/grafana-contact-points-secret.yml
-
-            - name: Upgrade monitoring stack from repo values
-              run: |
-                  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-                  helm repo update
-                  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-                    --namespace monitoring \
-                    --create-namespace \
-                    --values config/monitoring/kube-prometheus-stack-values.yml
+              run: kubectl apply -f config/monitoring/url-shortener-monitoring.yml
 
             - name: Render TLS issuer manifest
               env:

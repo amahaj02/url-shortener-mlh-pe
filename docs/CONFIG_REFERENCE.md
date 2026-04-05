@@ -94,7 +94,6 @@ These values are supplied through GitHub Actions secrets rather than committed i
 | `CLUSTER_NAME` | Target Kubernetes cluster name |
 | `K8S_ENV_FILE` | App environment file rendered into the `url-shortener-env` secret |
 | `LETSENCRYPT_EMAIL` | Contact email rendered into `config/letsencrypt-issuer.yml` at deploy time |
-| `GRAFANA_DISCORD_WEBHOOK_URL` | Discord webhook rendered into `config/monitoring/grafana-contact-points-secret.yml` |
 
 ## Ingress And TLS
 
@@ -134,16 +133,6 @@ The workflow currently applies these repo-managed manifests:
 
 - `config/deployment.yml`
 - `config/monitoring/url-shortener-monitoring.yml`
-- `config/monitoring/grafana-dashboard-configmap.yml`
-- `config/monitoring/grafana-alerting-policies-configmap.yml`
 - `config/letsencrypt-issuer.yml`
 - `config/app-ingress.yml`
 - `config/monitoring/monitoring-ingress.yml`
-
-The monitoring stack values we now treat as source-of-truth in the repo live in:
-
-- `config/monitoring/kube-prometheus-stack-values.yml`
-
-That values file records the live Grafana persistence settings and the file mounts used for Grafana alerting provisioning.
-
-The deployment workflow now also runs a Helm upgrade for `kube-prometheus-stack` using that values file, so Grafana persistence and provisioning mounts are no longer a manual-only cluster tweak.

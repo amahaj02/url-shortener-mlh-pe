@@ -8,18 +8,13 @@ This is the practical deploy path for the current repo.
 2. The workflow runs tests first.
 3. If tests pass, it builds the image, pushes to DigitalOcean Container Registry, renders `config/deployment.yml`, and applies it to the cluster.
 4. The workflow waits for `kubectl rollout status` before calling the deploy successful.
-5. Monitoring manifests are applied, the Grafana contact point secret is rendered from GitHub Actions secrets, and the workflow runs a Helm upgrade for `kube-prometheus-stack` using the repo values file.
-6. TLS issuer and ingress manifests are applied after the app rollout.
+5. Monitoring manifests, TLS issuer, and ingress manifests are applied after the app rollout.
 
 Key files:
 
 - Workflow: `.github/workflows/k8s-deploy.yml`
 - App workload: `config/deployment.yml`
 - Monitoring rules: `config/monitoring/url-shortener-monitoring.yml`
-- Grafana dashboard import: `config/monitoring/grafana-dashboard-configmap.yml`
-- Grafana alerting policy template: `config/monitoring/grafana-alerting-policies-configmap.yml`
-- Grafana contact point template: `config/monitoring/grafana-contact-points-secret.yml`
-- Monitoring Helm values: `config/monitoring/kube-prometheus-stack-values.yml`
 - App ingress: `config/app-ingress.yml`
 - Monitoring ingress: `config/monitoring/monitoring-ingress.yml`
 - TLS issuer: `config/letsencrypt-issuer.yml`
