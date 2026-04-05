@@ -51,6 +51,15 @@ def _ttl_seconds() -> int | None:
     return v
 
 
+def _log_redis_connected(client: Any, label: str) -> None:
+    try:
+        client.ping()
+    except Exception as exc:
+        logger.warning("redis cache: client created but ping failed (%s): %s", label, exc)
+        return
+    logger.info("redis cache: connected (%s)", label)
+
+
 def init_cache(app) -> None:
     """Attach a Redis client to app.extensions['redis'], or None if caching is off."""
     global _redis
@@ -68,7 +77,7 @@ def init_cache(app) -> None:
             import redis
 
             client = redis.from_url(url, decode_responses=True)
-            logger.info("redis cache: REDIS_URL")
+            _log_redis_connected(client, "REDIS_URL")
         elif host:
             import redis
 
@@ -82,7 +91,9 @@ def init_cache(app) -> None:
                 db=db,
                 decode_responses=True,
             )
-            logger.info("redis cache: %s:%s db=%s", host, port, db)
+            _log_redis_connected(client, f"{host}:{port} db={db}")
+        else:
+            logger.info("redis cache: disabled (set REDIS_URL or REDIS_HOST to enable)")
 
     _redis = client
     app.extensions["redis"] = client
