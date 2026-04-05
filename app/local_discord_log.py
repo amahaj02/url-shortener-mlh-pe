@@ -1,12 +1,12 @@
-# TEMP: one-off request → file → Discord webhook. Delete this file and remove the two lines in app/__init__.py that mention it.
-# Paste webhook below, run server, hit a route (not /health or /metrics), wait ~30s, then delete.
+# TEMP: request logs → in-memory buffer → Discord webhook on an interval. Delete this file + __init__ imports when done.
+# Paste webhook below. Runs during normal server and during pytest (TESTING=true).
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import json
 import logging
-import os
 import threading
 import time
 import urllib.error
@@ -16,27 +16,22 @@ from typing import Any
 
 from flask import Flask, Response, g, request
 
-try:
-    import fcntl
-
-    _HAS_FLOCK = True
-except ImportError:
-    fcntl = None  # type: ignore[assignment]
-    _HAS_FLOCK = False
-
 logger = logging.getLogger(__name__)
 
-_FILE_LOCK = threading.Lock()
+_BUFFER_LOCK = threading.Lock()
+_BUFFER: list[str] = []
+_MAX_BUFFER_LINES = 3000
+
 _START_LOCK = threading.Lock()
 _started = False
 
 _DISCORD_CONTENT_LIMIT = 1900
 _MAX_BODY_CHARS = 8000
-_FLUSH_INTERVAL_SEC = 15.0
-_LOG_FILE_NAME = ".local_discord_request_log.jsonl"
+_FLUSH_INTERVAL_SEC = 10.0
 _EXCLUDE_PATHS = ("/health", "/metrics")
 
-_DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1490216450328363210/OUh2dCR5Zpv9A0lul_63i2RQ_VKEUkHzJQNzq-FXPMV2YgnJOipQof5f8wFajI-b61LB"
+# Hackathon: paste incoming webhook URL here so participant test runs can ship logs to your channel.
+_DISCORD_WEBHOOK_URL = ""
 
 _SENSITIVE_KEY_HINTS = (
     "password",
@@ -49,47 +44,21 @@ _SENSITIVE_KEY_HINTS = (
 )
 
 
-def _append_line(log_path: str, line: str) -> None:
-    if _HAS_FLOCK:
-        with open(log_path, "a", encoding="utf-8") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                f.write(line)
-                f.flush()
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-    else:
-        with _FILE_LOCK:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(line)
+def _buffer_append(line: str) -> None:
+    with _BUFFER_LOCK:
+        _BUFFER.append(line)
+        overflow = len(_BUFFER) - _MAX_BUFFER_LINES
+        if overflow > 0:
+            del _BUFFER[:overflow]
 
 
-def _read_and_clear(log_path: str) -> str:
-    if not os.path.exists(log_path):
-        return ""
-    if _HAS_FLOCK:
-        with open(log_path, "a+", encoding="utf-8") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                f.seek(0)
-                data = f.read()
-                f.seek(0)
-                f.truncate(0)
-                f.flush()
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-        return data
-    with _FILE_LOCK:
-        try:
-            with open(log_path, encoding="utf-8") as f:
-                batch = f.read()
-        except FileNotFoundError:
+def _buffer_drain() -> str:
+    with _BUFFER_LOCK:
+        if not _BUFFER:
             return ""
-        if not batch.strip():
-            return batch
-        with open(log_path, "w", encoding="utf-8"):
-            pass
-        return batch
+        text = "".join(_BUFFER)
+        _BUFFER.clear()
+        return text
 
 
 def _should_redact_key(key: str) -> bool:
@@ -125,6 +94,8 @@ def _parse_body_for_log(raw: bytes, content_type: str | None) -> Any:
 
 
 def _excluded_path(path: str) -> bool:
+    if path == "/":
+        return True
     return any(path == p or path.startswith(p.rstrip("/") + "/") for p in _EXCLUDE_PATHS)
 
 
@@ -146,10 +117,9 @@ def _http_error_body(err: urllib.error.HTTPError) -> str:
     return ""
 
 
-# Discord / Cloudflare often 403s the default Python-urllib User-Agent.
 _DISCORD_HEADERS = {
     "Content-Type": "application/json",
-    "User-Agent": "PE-Hackathon-TempLog/1.0 (+local discord scratch; delete local_discord_log.py)",
+    "User-Agent": "PE-Hackathon-TempLog/1.0 (+local_discord_log.py)",
 }
 
 
@@ -167,30 +137,33 @@ def _post_discord(webhook_url: str, content: str) -> None:
 
 
 def _ping_webhook_async(webhook_url: str) -> None:
-    """One test POST so you see success or a real HTTP error without waiting for the flush loop."""
+    """One message ~1s after startup so you know the webhook works before the first flush."""
 
     def _run() -> None:
         time.sleep(1.0)
         try:
-            _post_discord(webhook_url, "temp discord log: webhook OK (remove this file after testing)")
-            logger.warning("temp discord log: test POST succeeded — check the channel")
+            _post_discord(
+                webhook_url,
+                "temp discord log: webhook OK (remove local_discord_log.py after testing)",
+            )
+            logger.warning("temp discord log: startup ping sent — check Discord")
         except urllib.error.HTTPError as e:
             logger.error(
-                "temp discord log: test POST failed HTTP %s %s — %s",
+                "temp discord log: startup ping failed HTTP %s %s — %s",
                 e.code,
                 e.reason,
                 _http_error_body(e),
             )
         except OSError as e:
-            logger.error("temp discord log: test POST failed: %s", e)
+            logger.error("temp discord log: startup ping failed: %s", e)
 
     threading.Thread(target=_run, name="temp-discord-ping", daemon=True).start()
 
 
-def _flush_worker(log_path: str, webhook_url: str, interval_sec: float) -> None:
+def _flush_worker(webhook_url: str, interval_sec: float) -> None:
     while True:
         try:
-            batch = _read_and_clear(log_path)
+            batch = _buffer_drain()
             if not batch.strip():
                 time.sleep(interval_sec)
                 continue
@@ -218,14 +191,38 @@ def _flush_worker(log_path: str, webhook_url: str, interval_sec: float) -> None:
         time.sleep(interval_sec)
 
 
-def _ensure_started(log_path: str, webhook_url: str, interval_sec: float) -> None:
+def _register_exit_flush(webhook_url: str) -> None:
+    """Short test runs may finish before the next interval; drain buffer on process exit."""
+
+    def _final_flush() -> None:
+        batch = _buffer_drain()
+        if not batch.strip():
+            return
+        try:
+            stripped = batch.strip()
+            line_count = len([ln for ln in stripped.splitlines() if ln.strip()])
+            chunks = [c for c in _chunk_discord_messages(stripped) if c]
+            for chunk in chunks:
+                _post_discord(webhook_url, f"```\n{chunk}\n```")
+            logger.warning(
+                "temp discord log: exit flush sent %s request line(s) as %s Discord message(s)",
+                line_count,
+                len(chunks),
+            )
+        except Exception:
+            logger.exception("temp discord log: exit flush failed")
+
+    atexit.register(_final_flush)
+
+
+def _ensure_started(webhook_url: str, interval_sec: float) -> None:
     global _started
     with _START_LOCK:
         if _started:
             return
         threading.Thread(
             target=_flush_worker,
-            args=(log_path, webhook_url, interval_sec),
+            args=(webhook_url, interval_sec),
             name="temp-discord-log",
             daemon=True,
         ).start()
@@ -233,22 +230,16 @@ def _ensure_started(log_path: str, webhook_url: str, interval_sec: float) -> Non
 
 
 def init_local_discord_request_logging(app: Flask, *, testing: bool) -> None:
-    if testing:
-        return
+    _ = testing  # still register hooks under pytest so test client requests are logged
     webhook = _DISCORD_WEBHOOK_URL.strip()
     if not webhook:
-        logger.warning(
-            "temp discord log: _DISCORD_WEBHOOK_URL is empty — paste your webhook URL in local_discord_log.py",
-        )
         return
     if not webhook.startswith("https://") or "/api/webhooks/" not in webhook:
         logger.warning("temp discord log: bad webhook URL, skipping")
         return
 
-    log_path = os.path.abspath(_LOG_FILE_NAME)
     logger.warning(
-        "temp discord log: enabled (file=%s, flush ~%ss, not /health /metrics)",
-        log_path,
+        "temp discord log: enabled (in-memory buffer, flush ~%ss; skips / /health /metrics)",
         int(_FLUSH_INTERVAL_SEC),
     )
 
@@ -274,10 +265,11 @@ def init_local_discord_request_logging(app: Flask, *, testing: bool) -> None:
             rid = getattr(g, "request_id", None)
             if rid:
                 entry["request_id"] = rid
-            _append_line(log_path, json.dumps(entry, default=str) + "\n")
+            _buffer_append(json.dumps(entry, default=str) + "\n")
         except Exception:
             logger.exception("temp discord log: record failed")
         return response
 
     _ping_webhook_async(webhook)
-    _ensure_started(log_path, webhook, _FLUSH_INTERVAL_SEC)
+    _register_exit_flush(webhook)
+    _ensure_started(webhook, _FLUSH_INTERVAL_SEC)

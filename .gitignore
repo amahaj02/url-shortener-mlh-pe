@@ -13,9 +13,6 @@ build/
 # Environment variables
 .env
 
-# TEMP (delete with app/local_discord_log.py)
-.local_discord_request_log.jsonl
-
 # uv
 uv.lock
 
