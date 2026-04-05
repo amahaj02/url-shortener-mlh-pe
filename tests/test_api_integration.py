@@ -476,6 +476,35 @@ def test_create_event_returns_201(client, test_db):
     assert payload["user_id"] == user.id
 
 
+def test_create_event_rejects_json_boolean_disguised_as_integer_ids(client, test_db):
+    user = User.create(username="bool-evt", email="bool-evt@example.com")
+    url_entry = Url.create(user=user, short_code="bool01", original_url="https://example.com/bool", is_active=True)
+
+    r_url = client.post(
+        "/events",
+        json={
+            "url_id": True,
+            "user_id": user.id,
+            "event_type": "click",
+            "details": {},
+        },
+    )
+    assert r_url.status_code == 400
+    assert "url_id" in r_url.get_json()["errors"]
+
+    r_user = client.post(
+        "/events",
+        json={
+            "url_id": url_entry.id,
+            "user_id": False,
+            "event_type": "click",
+            "details": {},
+        },
+    )
+    assert r_user.status_code == 400
+    assert "user_id" in r_user.get_json()["errors"]
+
+
 def test_clear_db_endpoint_deletes_all_rows(client, test_db):
     user = User.create(username="clear-me", email="clear-me@example.com")
     url_entry = Url.create(

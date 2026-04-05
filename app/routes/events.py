@@ -10,6 +10,11 @@ from app.models.user import User
 events_bp = Blueprint("events", __name__)
 
 
+def _is_strict_json_int(value):
+    """True JSON integers only — bool is a subclass of int in Python."""
+    return type(value) is int
+
+
 @events_bp.route("/events", methods=["GET"])
 def list_events():
     query = Event.select().order_by(Event.id)
@@ -48,9 +53,9 @@ def create_event():
     details = payload.get("details", {})
 
     errors = {}
-    if url_id is not None and not isinstance(url_id, int):
+    if url_id is not None and not _is_strict_json_int(url_id):
         errors["url_id"] = "url_id must be an integer or null"
-    if user_id is not None and not isinstance(user_id, int):
+    if user_id is not None and not _is_strict_json_int(user_id):
         errors["user_id"] = "user_id must be an integer or null"
     if not isinstance(event_type, str) or not event_type.strip():
         errors["event_type"] = "event_type must be a non-empty string"
