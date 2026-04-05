@@ -9,7 +9,7 @@ from peewee import InterfaceError, OperationalError
 import psutil
 
 from app.cache import init_cache
-from app.database import close_db, connect_db, db, init_db
+from app.database import close_db, connect_db, db, ensure_url_user_original_url_index, init_db
 from app.logging_config import clear_log_context, configure_logging, set_log_context
 from app.prometheus_metrics import finish_exception, finish_request, render_metrics, start_request_timer
 from app.routes import register_routes
@@ -70,6 +70,7 @@ def create_app(testing=None):
                     connect_db()
                     continue
                 raise
+    ensure_url_user_original_url_index()
     close_db()
 
     init_cache(app)

@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
-from app.database import close_db, db
+from app.database import close_db, db, ensure_url_user_original_url_index
 from app.models import ALL_MODELS
 
 
@@ -22,6 +22,7 @@ def test_db(app):
     if db.is_closed():
         db.connect(reuse_if_open=True)
     db.create_tables(ALL_MODELS, safe=True)
+    ensure_url_user_original_url_index()
     yield db
 
 

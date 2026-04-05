@@ -18,11 +18,10 @@ This is a practical capacity note for the current hackathon build, not a promise
 
 ## Load-Test Entry Points
 
-- `tests/perf/k6_50_concurrent_spike.js`
-- `tests/perf/k6_200_concurrent_spike.js`
-- `tests/perf/k6_500_concurrent_spike.js`
-- `tests/perf/k6_1000_concurrent_spike.js`
-- `tests/perf/k6_redis_redirect_cache.js`
+- `tests/perf/k6_write_spike_shared.js` — shared write scenario (POST /users → /urls → GET /urls)
+- `tests/perf/k6_50_concurrent_spike.js` … `k6_1000_concurrent_spike.js` — same scenario; default VUS matches filename (override with `VUS`, `DURATION`, `BASE_URL`)
+- `tests/perf/k6_smoke_write.js` — 1 VU, 30s, loose thresholds (quick wiring check)
+- `tests/perf/k6_redis_redirect_cache.js` — GET /:short_code (redirect cache path)
 
 ## Expected Limiters
 

@@ -147,3 +147,20 @@ def connect_db():
 def close_db():
     if not db.is_closed():
         db.close()
+
+
+URL_USER_ORIGINAL_URL_INDEX_NAME = "url_user_id_original_url"
+_URL_USER_ORIGINAL_URL_INDEX_SQL = (
+    f"CREATE INDEX IF NOT EXISTS {URL_USER_ORIGINAL_URL_INDEX_NAME} "
+    "ON url (user_id, original_url)"
+)
+
+
+def ensure_url_user_original_url_index() -> None:
+    """Ensure btree for idempotent POST /urls lookup (user_id, original_url).
+
+    Not defined in Url.Meta.indexes so existing databases get the index on startup
+    (Peewee create_tables(safe=True) does not add new indexes to already-created tables).
+    Safe to call repeatedly: ``IF NOT EXISTS``. Works on PostgreSQL and SQLite.
+    """
+    db.execute_sql(_URL_USER_ORIGINAL_URL_INDEX_SQL)
