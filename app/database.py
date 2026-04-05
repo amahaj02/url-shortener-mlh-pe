@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from peewee import DatabaseProxy, Model, SqliteDatabase
+from peewee import DatabaseProxy, IntegrityError, Model, SqliteDatabase
 from playhouse.pool import PooledPostgresqlDatabase
 
 from app.logging_config import get_log_context
@@ -64,7 +64,11 @@ class LoggingSqlMixin:
                 "db_error": type(error).__name__,
             }
             extra.update(get_log_context())
-            sql_logger.exception("sql_query_failed", extra=extra)
+            # Unique / FK violations are often handled by the route (e.g. idempotent create).
+            if isinstance(error, IntegrityError):
+                sql_logger.info("sql_integrity_constraint", extra=extra)
+            else:
+                sql_logger.exception("sql_query_failed", extra=extra)
             raise
 
         duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
@@ -94,6 +98,21 @@ class BaseModel(Model):
         database = db
 
 
+def _postgres_connect_kwargs():
+    """Extra kwargs for psycopg2.connect (TLS, timeouts). Empty for local Postgres without SSL."""
+    connect_kwargs = {}
+    sslmode = os.environ.get("DATABASE_SSLMODE", "").strip()
+    if sslmode:
+        connect_kwargs["sslmode"] = sslmode
+    connect_timeout_raw = os.environ.get("DATABASE_CONNECT_TIMEOUT")
+    if connect_timeout_raw:
+        try:
+            connect_kwargs["connect_timeout"] = int(connect_timeout_raw.strip())
+        except ValueError:
+            pass
+    return connect_kwargs
+
+
 def init_db(testing=False):
     if getattr(db, "obj", None) is not None and not db.is_closed():
         db.close()
@@ -115,6 +134,7 @@ def init_db(testing=False):
             max_connections=int(os.environ.get("DATABASE_MAX_CONNECTIONS", "20")),
             stale_timeout=int(os.environ.get("DATABASE_STALE_TIMEOUT_SECONDS", "300")),
             timeout=int(os.environ.get("DATABASE_POOL_WAIT_TIMEOUT_SECONDS", "10")),
+            **_postgres_connect_kwargs(),
         )
 
     db.initialize(database)
