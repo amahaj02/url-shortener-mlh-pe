@@ -4,7 +4,8 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, make_response, request
-from peewee import IntegrityError
+from peewee import IntegrityError, fn
+from werkzeug.urls import iri_to_uri
 
 from app.cache import delete_short_link, get_short_link, set_short_link
 from app.database import db
@@ -134,12 +135,12 @@ def create_url():
             elif not _CUSTOM_SHORT_CODE_RE.fullmatch(stripped_sc):
                 short_code_errors["short_code"] = "must be 4-20 alphanumeric characters"
             else:
-                custom_short_code = stripped_sc
+                custom_short_code = stripped_sc.lower()
 
     if short_code_errors:
         return jsonify(errors=short_code_errors), 400
 
-    if custom_short_code and Url.select().where(Url.short_code == custom_short_code).exists():
+    if custom_short_code and Url.select().where(fn.Lower(Url.short_code) == custom_short_code).exists():
         return jsonify(errors={"short_code": "already taken"}), 400
 
     title = payload.get("title")
@@ -324,15 +325,16 @@ def delete_url(url_id):
 @redirect_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_url(short_code):
     """Resolve redirects from the database so is_active is never stale vs Redis."""
+    lookup = short_code.lower()
     try:
-        url_entry = Url.get(Url.short_code == short_code)
+        url_entry = Url.get(fn.Lower(Url.short_code) == lookup)
     except Url.DoesNotExist:
         return jsonify(error="Resource not found"), 404
 
     if not url_entry.is_active:
         return jsonify(error="Short URL is inactive"), 410
 
-    cached = get_short_link(short_code)
+    cached = get_short_link(url_entry.short_code)
     cache_hit = cached is not None
     if cached and cached.get("original_url"):
         destination = cached["original_url"]
@@ -369,5 +371,5 @@ def redirect_short_url(short_code):
     )
 
     response = make_response("", 302)
-    response.headers["Location"] = destination
+    response.headers["Location"] = iri_to_uri(destination)
     return response

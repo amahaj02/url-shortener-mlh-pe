@@ -229,11 +229,39 @@ def test_create_url_accepts_custom_short_code_and_redirects(client, test_db):
 
     assert create.status_code == 201
     body = create.get_json()
-    assert body["short_code"] == "myCustom"
+    assert body["short_code"] == "mycustom"
 
-    redirect = client.get("/myCustom", follow_redirects=False)
-    assert redirect.status_code == 302
-    assert redirect.headers["Location"] == "https://example.com/branded"
+    for path in ("/mycustom", "/myCustom", "/MYCUSTOM"):
+        redirect = client.get(path, follow_redirects=False)
+        assert redirect.status_code == 302
+        assert redirect.headers["Location"] == "https://example.com/branded"
+
+
+def test_redirect_short_code_case_insensitive_for_stored_code(client, test_db):
+    user = User.create(username="case-auto", email="case-auto@example.com")
+    Url.create(
+        user=user,
+        short_code="A",
+        original_url="https://example.com/auto-case",
+        is_active=True,
+    )
+
+    assert client.get("/A", follow_redirects=False).status_code == 302
+    assert client.get("/a", follow_redirects=False).status_code == 302
+
+
+def test_redirect_location_header_percent_encodes_unicode_destination(client, test_db):
+    user = User.create(username="iri-user", email="iri-user@example.com")
+    Url.create(
+        user=user,
+        short_code="iri01",
+        original_url="https://example.com/café",
+        is_active=True,
+    )
+
+    response = client.get("/iri01", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"] == "https://example.com/caf%C3%A9"
 
 
 def test_create_url_rejects_short_code_too_short(client, test_db):
@@ -285,7 +313,7 @@ def test_create_url_rejects_taken_custom_short_code(client, test_db):
         json={
             "user_id": u2.id,
             "original_url": "https://example.com/second",
-            "short_code": "taken1",
+            "short_code": "TAKEN1",
         },
     )
 
