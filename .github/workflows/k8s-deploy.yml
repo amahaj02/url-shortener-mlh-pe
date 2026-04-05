@@ -123,5 +123,25 @@ jobs:
             - name: Apply monitoring manifests
               run: kubectl apply -f config/monitoring/url-shortener-monitoring.yml
 
+            - name: Render TLS issuer manifest
+              env:
+                  LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+              run: |
+                  if [ -z "$LETSENCRYPT_EMAIL" ]; then
+                    echo "LETSENCRYPT_EMAIL GitHub secret is required but not set"
+                    exit 1
+                  fi
+                  sed -e "s|<LETSENCRYPT_EMAIL>|${LETSENCRYPT_EMAIL}|" \
+                      config/letsencrypt-issuer.yml > /tmp/letsencrypt-issuer.yml
+
+            - name: Apply TLS issuer
+              run: kubectl apply -f /tmp/letsencrypt-issuer.yml
+
+            - name: Apply application ingress
+              run: kubectl apply -f config/app-ingress.yml
+
+            - name: Apply monitoring ingress
+              run: kubectl apply -f config/monitoring/monitoring-ingress.yml
+
             - name: Verify service endpoints
               run: kubectl get service url-shortener-service --namespace=default
