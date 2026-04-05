@@ -221,10 +221,10 @@ uv run run.py
 2. In a separate terminal, run the k6 script:
 
 ```bash
-k6 run -e BASE_URL=http://localhost:3000 -e DURATION=60s tests/perf/k6_50_vus.js
+k6 run -e BASE_URL=http://localhost:3000 -e DURATION=2m tests/perf/k6_concurrent_spike.js
 ```
 
-- The script uses `constant-vus` with `vus: 50` for the full duration.
+- By default the script targets about **100 HTTP requests/s** (constant arrival rate). Use **`-e HTTP_REQ_PER_SEC=200`** to change that, or **`-e VU_RAMP=1 -e VUS=500`** for a ramped VU test instead.
 - Update `BASE_URL` if your API is not running on `localhost:3000`.
 
 ## Observability Bronze

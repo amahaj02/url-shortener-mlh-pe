@@ -14,10 +14,7 @@ What we implemented:
 
 Current perf entrypoints:
 
-- `tests/perf/k6_50_concurrent_spike.js`
-- `tests/perf/k6_200_concurrent_spike.js`
-- `tests/perf/k6_500_concurrent_spike.js`
-- `tests/perf/k6_1000_concurrent_spike.js`
+- `tests/perf/k6_concurrent_spike.js` — default **~100 HTTP req/s**; or **`VU_RAMP=1`** with **`VUS`** (e.g. 200, 500, 1000)
 - `tests/perf/k6_redis_redirect_cache.js`
 
 ## Silver: The Scale-Out

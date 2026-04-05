@@ -1,47 +1,84 @@
 /**
  * Load test for the Redis-backed redirect path: GET /<short_code>
- * (see app/routes/urls.py — get_short_link → redirect).
+ * (see app/routes/urls.py — redirect_short_url → get_short_link / set_short_link).
  *
- * Setup creates one user and N short links (POST /urls calls set_short_link, so Redis is warm).
- * Each VU repeatedly requests random short codes. Use redirects: 0 to stay on your API (302 only).
- * Note: resolve uses Redis first, but each click still records an event (DB). Tune SEED_URL_COUNT / VUS if setup times out.
+ * Setup: one user + N short links (POST /urls warms Redis via set_short_link).
+ * Default function: each VU loops HITS_PER_ITER random GET /<short_code> (redirects: 0 → 302 + Location only).
+ *
+ * Concurrency (pick one style):
+ *   Constant VUs (default): VUS workers for the full DURATION — good for steady parallel load.
+ *   Ramp: VU_RAMP=1 — 0 → VUS over DURATION, then ramp-down — good for “tsunami” style runs.
  *
  * Env:
- *   BASE_URL          — default http://localhost:3000
- *   VUS               — concurrent VUs (default 50)
- *   DURATION          — e.g. 2m, 5m (default 3m)
- *   SEED_URL_COUNT    — short links to create in setup (default 80)
- *   HITS_PER_ITER       — GET /<code> calls per iteration per VU (default 15)
+ *   BASE_URL            — default http://localhost:3000
+ *   VUS                 — concurrent VUs at plateau (constant mode) or target at end of ramp (ramp mode); default 50
+ *   DURATION            — e.g. 2m, 5m (default 3m). Ramp length when VU_RAMP=1; full run length in constant mode.
+ *   VU_RAMP             — set to 1 or true to use ramping-vus (0 → VUS over DURATION)
+ *   SEED_URL_COUNT      — short links in setup (default 80)
+ *   HITS_PER_ITER       — GET /<code> per iteration per VU (default 15)
+ *   MAX_HTTP_FAILED_RATE — threshold for http_req_failed (default 0.05)
  *
- * DEBUG_K6=1         — log status / body snippet when redirect checks fail (find timeouts vs 5xx).
+ * Examples:
+ *   VUS=200 DURATION=3m BASE_URL=https://… k6 run tests/perf/k6_redis_redirect_cache.js
+ *   VU_RAMP=1 VUS=500 DURATION=3m BASE_URL=https://… k6 run tests/perf/k6_redis_redirect_cache.js
  *
- * Example:
- *   BASE_URL=https://your-lb.example.com k6 run tests/perf/k6_redis_redirect_cache.js
+ * DEBUG_K6=1 — log failures (status, error, Location snippet).
  */
 
 import http from "k6/http";
 import { check, fail } from "k6";
 
 const BASE_URL = (__ENV.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
-const VUS = Number(__ENV.VUS || 50);
+const VUS = Math.max(1, Number(__ENV.VUS || 50));
 const DURATION = __ENV.DURATION || "3m";
 const SEED_URL_COUNT = Math.max(1, Number(__ENV.SEED_URL_COUNT || 80));
 const HITS_PER_ITER = Math.max(1, Number(__ENV.HITS_PER_ITER || 15));
+const USE_VU_RAMP = __ENV.VU_RAMP === "1" || __ENV.VU_RAMP === "true";
 
-export const options = {
-    scenarios: {
-        redis_redirect_load: {
-            executor: "constant-vus",
-            vus: VUS,
-            duration: DURATION,
-            gracefulStop: "30s",
-        },
-    },
-    thresholds: {
-        http_req_failed: ["rate<0.05"],
+function maxHttpFailedRateForThreshold() {
+    const raw = __ENV.MAX_HTTP_FAILED_RATE;
+    if (raw === undefined || raw === "") {
+        return "0.05";
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+        return "0.05";
+    }
+    return String(n);
+}
+
+const maxFail = maxHttpFailedRateForThreshold();
+
+function redirectThresholds() {
+    return {
+        http_req_failed: [`rate<${maxFail}`],
         "http_req_duration{name:redis_redirect}": ["p(95)<2000"],
-    },
-};
+    };
+}
+
+export const options = USE_VU_RAMP
+    ? {
+          scenarios: {
+              redis_redirect_ramp: {
+                  executor: "ramping-vus",
+                  startVUs: 0,
+                  stages: [{ duration: DURATION, target: VUS }],
+                  gracefulRampDown: "30s",
+              },
+          },
+          thresholds: redirectThresholds(),
+      }
+    : {
+          scenarios: {
+              redis_redirect_load: {
+                  executor: "constant-vus",
+                  vus: VUS,
+                  duration: DURATION,
+                  gracefulStop: "30s",
+              },
+          },
+          thresholds: redirectThresholds(),
+      };
 
 function createUserPayload() {
     const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -128,6 +165,14 @@ function locationHeader(r) {
     return "";
 }
 
+function locationLooksValid(loc) {
+    if (!loc || !loc.trim()) {
+        return false;
+    }
+    const t = loc.trim();
+    return /^https?:\/\//i.test(t) || t.startsWith("/");
+}
+
 export default function (data) {
     const shortCodes = data.shortCodes;
     const debug = __ENV.DEBUG_K6 === "1" || __ENV.DEBUG_K6 === "true";
@@ -142,11 +187,12 @@ export default function (data) {
         const loc = locationHeader(res);
         const ok = check(res, {
             "GET /:short_code is 302": (r) => r.status === 302,
-            "Location present": () => loc.length > 0,
+            "Location header present": () => loc.length > 0,
+            "Location is usable (absolute or path)": () => locationLooksValid(loc),
         });
         if (!ok && debug) {
             console.error(
-                `redis_redirect fail: status=${res.status} error=${res.error || ""} location_len=${loc.length} body=${String(res.body).slice(0, 160)}`,
+                `redis_redirect fail: status=${res.status} error=${res.error || ""} location=${JSON.stringify(loc).slice(0, 120)} body=${String(res.body).slice(0, 160)}`,
             );
         }
     }

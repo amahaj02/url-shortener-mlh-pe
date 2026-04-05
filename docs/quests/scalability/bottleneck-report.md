@@ -2,9 +2,13 @@
 
 This report is the short version of what we learned while pushing the app from "works locally" to "can survive real traffic without immediately falling over."
 
+## Rubric summary (2–3 sentences for submission)
+
+The hottest path was **`GET /<short_code>`**: every redirect used to hit Postgres for the same short codes repeatedly. We added **Redis-backed caching** for redirect resolution (`app/cache.py`) so repeat lookups avoid the database, and we kept **observability** (logs with `cache_hit`, metrics) to prove cache hits and find the next bottleneck. Under load tests (**500+ VUs** with **`http_req_failed` &lt; 5%**), the system stayed stable because the DB was no longer doing redundant read work on every click.
+
 ## What We Tested
 
-Our baseline load test was the mixed k6 workflow in `tests/perf/k6_50_concurrent_spike.js`. It exercises the three paths that matter most for this app:
+Our baseline load test was the mixed k6 workflow in `tests/perf/k6_concurrent_spike.js` (default **50 VUs**; higher tiers use the same script with **`VUS=200`**, **`500`**, or **`1000`**). It exercises the main write/read paths that matter most for this app:
 
 - creating users
 - creating short URLs

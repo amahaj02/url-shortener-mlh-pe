@@ -343,6 +343,7 @@ def redirect_short_url(short_code):
         destination = url_entry.original_url
         set_short_link(url_entry)
 
+    # Batched DB writes via event_pipeline (insert_many); not per-request sync insert.
     Event.create_event(
         url=url_entry,
         user=_resolve_user_id(url_entry),
@@ -355,7 +356,6 @@ def redirect_short_url(short_code):
             or (request.user_agent.string if request.user_agent else "")
             or "",
         },
-        immediate=True,
     )
 
     logger.info(
