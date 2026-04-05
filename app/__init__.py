@@ -11,6 +11,7 @@ import psutil
 from app.cache import init_cache
 from app.database import close_db, connect_db, db, init_db
 from app.logging_config import clear_log_context, configure_logging, set_log_context
+from app.prometheus_metrics import finish_exception, finish_request, render_metrics, start_request_timer
 from app.routes import register_routes
 
 logger = logging.getLogger(__name__)
@@ -65,13 +66,14 @@ def create_app(testing=None):
     init_cache(app)
 
     if not effective_testing:
-        db_optional_endpoints = {"health", "metrics"}
+        db_optional_endpoints = {"health", "metrics", "prometheus_metrics"}
 
         @app.before_request
         def _open_db_and_mark_start():
             request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
             g.request_id = request_id
             set_log_context(request_id=request_id, path=request.path, method=request.method)
+            start_request_timer()
             if request.endpoint in db_optional_endpoints:
                 return
             request._t0 = time.perf_counter()
@@ -81,6 +83,7 @@ def create_app(testing=None):
         def _log_request_response(response):
             if hasattr(g, "request_id"):
                 response.headers["X-Request-ID"] = g.request_id
+            response = finish_request(response)
             if request.endpoint in db_optional_endpoints or request.endpoint is None:
                 return response
             if getattr(request, "_t0", None) is not None:
@@ -112,6 +115,11 @@ def create_app(testing=None):
             finally:
                 clear_log_context()
 
+        @app.teardown_request
+        def _record_request_exception(exception=None):
+            if exception is not None:
+                finish_exception(exception)
+
     register_routes(app)
 
     @app.route("/health")
@@ -139,6 +147,11 @@ def create_app(testing=None):
             },
             status="ok",
         )
+
+    @app.route("/metrics/prometheus")
+    def prometheus_metrics():
+        payload, content_type = render_metrics()
+        return app.response_class(payload, mimetype=content_type)
 
     @app.after_request
     def _attach_request_id(response):

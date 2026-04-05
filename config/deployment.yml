@@ -114,6 +114,8 @@ apiVersion: v1
 kind: Service
 metadata:
     name: url-shortener-service
+    labels:
+        app: url-shortener
     annotations:
         # DO LB: avoid long-lived backend connections that pin traffic to a subset of pods.
         service.beta.kubernetes.io/do-loadbalancer-enable-backend-keepalive: "false"

@@ -1,0 +1,70 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: url-shortener
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - default
+  selector:
+    matchLabels:
+      app: url-shortener
+  endpoints:
+    - port: http
+      path: /metrics/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: url-shortener-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: url-shortener.rules
+      rules:
+        - alert: UrlShortenerServiceDown
+          expr: max(up{namespace="default", service="url-shortener-service"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: url-shortener
+          annotations:
+            summary: url-shortener is down
+            description: Prometheus has not been able to scrape url-shortener-service for at least 2 minutes.
+
+        - alert: UrlShortenerHighErrorRate
+          expr: |
+            (
+              sum(rate(url_shortener_http_requests_total{status=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(url_shortener_http_requests_total[5m])), 1)
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            service: url-shortener
+          annotations:
+            summary: url-shortener high error rate
+            description: The 5xx error rate for url-shortener has exceeded 5% for 5 minutes.
+
+        - alert: UrlShortenerHighCpuUsage
+          expr: |
+            (
+              sum(rate(container_cpu_usage_seconds_total{namespace="default", pod=~"url-shortener-.*", container="url-shortener"}[2m]))
+              /
+              clamp_min(sum(kube_pod_container_resource_limits{namespace="default", pod=~"url-shortener-.*", container="url-shortener", resource="cpu", unit="core"}), 0.001)
+            ) > 0.90
+          for: 2m
+          labels:
+            severity: warning
+            service: url-shortener
+          annotations:
+            summary: url-shortener CPU usage is high
+            description: url-shortener pods have used more than 90% of their configured CPU limit for 2 minutes.

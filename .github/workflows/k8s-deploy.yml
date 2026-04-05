@@ -120,5 +120,8 @@ jobs:
             - name: Verify deployment rollout
               run: kubectl rollout status deployment/url-shortener --namespace=default --timeout=180s
 
+            - name: Apply monitoring manifests
+              run: kubectl apply -f config/monitoring/url-shortener-monitoring.yml
+
             - name: Verify service endpoints
               run: kubectl get service url-shortener-service --namespace=default
