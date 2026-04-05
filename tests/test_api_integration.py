@@ -373,7 +373,7 @@ def test_create_url_duplicate_inactive_returns_existing(client, test_db):
     assert Url.select().where(Url.user == user.id, Url.original_url == "https://example.com/dormant").count() == 1
 
 
-def test_inactive_short_url_returns_gone(client, test_db):
+def test_inactive_short_url_returns_not_found(client, test_db):
     user = User.create(username="inactive", email="inactive@example.com")
     url_entry = Url.create(
         user=user,
@@ -386,8 +386,8 @@ def test_inactive_short_url_returns_gone(client, test_db):
 
     response = client.get(f"/{url_entry.short_code}")
 
-    assert response.status_code == 410
-    assert response.get_json() == {"error": "Short URL is inactive"}
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "URL not found"}
     assert Event.select().count() == events_before
 
 
@@ -549,7 +549,7 @@ def test_create_url_rejects_non_string_title(client, test_db):
     assert response.get_json()["errors"]["title"] == "must be a string"
 
 
-def test_deactivated_url_returns_410_without_redirect_event(client, test_db):
+def test_deactivated_url_returns_404_without_redirect_event(client, test_db):
     user = User.create(username="sleep", email="sleep@example.com")
     created = client.post(
         "/urls",
@@ -564,8 +564,8 @@ def test_deactivated_url_returns_410_without_redirect_event(client, test_db):
     events_before_get = Event.select().count()
     response = client.get(f"/{short_code}")
 
-    assert response.status_code == 410
-    assert response.get_json() == {"error": "Short URL is inactive"}
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "URL not found"}
     assert Event.select().count() == events_before_get
     assert "click" not in [e.event_type for e in Event.select()]
 

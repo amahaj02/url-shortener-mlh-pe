@@ -45,11 +45,11 @@ This service is designed to fail cleanly under common error scenarios and to rec
 ```
 
 ### Inactive short code
-- Returns `410`.
+- Returns `404` (treated like a missing short code).
 - Response shape:
 
 ```json
-{"error":"Short URL is inactive"}
+{"error":"URL not found"}
 ```
 
 ### Database unavailable during request handling

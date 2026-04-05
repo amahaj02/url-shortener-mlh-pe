@@ -332,7 +332,7 @@ def redirect_short_url(short_code):
         return jsonify(error="Resource not found"), 404
 
     if not url_entry.is_active:
-        return jsonify(error="Short URL is inactive"), 410
+        return jsonify({"error": "URL not found"}), 404
 
     cached = get_short_link(url_entry.short_code)
     cache_hit = cached is not None

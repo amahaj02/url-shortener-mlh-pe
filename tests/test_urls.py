@@ -59,14 +59,14 @@ def test_redirect_short_url_returns_404_for_missing_code(client, monkeypatch):
     assert response.get_json() == {"error": "Resource not found"}
 
 
-def test_redirect_short_url_returns_410_for_inactive_code(client, monkeypatch):
+def test_redirect_short_url_returns_404_for_inactive_code(client, monkeypatch):
     inactive_url = SimpleNamespace(is_active=False)
     monkeypatch.setattr(Url, "get", lambda *args, **kwargs: inactive_url)
 
     response = client.get("/inactive")
 
-    assert response.status_code == 410
-    assert response.get_json() == {"error": "Short URL is inactive"}
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "URL not found"}
 
 
 def test_redirect_short_url_redirects_and_logs_event(client, monkeypatch):
