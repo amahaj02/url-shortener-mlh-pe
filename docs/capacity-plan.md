@@ -7,9 +7,9 @@ This is a practical capacity note for the current hackathon build, not a promise
 - Baseline deployment: 2 replicas (see `config/deployment.yml`)
 - Autoscaling range: 2 to 3 replicas (HPA)
 - Per-pod request/limit (`config/deployment.yml`):
-  - CPU request: `1000m`
+  - CPU request: `750m` (balance vs tiny nodes; raise toward `1000m` on larger droplets if scheduling allows)
   - CPU limit: `1800m`
-  - memory request: `1536Mi`
+  - memory request: `1280Mi`
   - memory limit: `3072Mi`
 - Postgres: sized for a larger cluster (e.g. **`max_connections` ≈ 197**). App pool per worker **`DATABASE_MAX_CONNECTIONS=48`** → at HPA **max 3** replicas, **`3×1×48 ≈ 144`** app connections, leaving headroom for reserved roles and other clients.
 - Gunicorn per pod:

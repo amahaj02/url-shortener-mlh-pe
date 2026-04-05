@@ -109,9 +109,11 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 8
           resources:
+            # Requests must fit on small nodes alongside kube-system; limits keep burst headroom.
+            # If 3rd replica stays Pending (Insufficient cpu/memory), lower requests or use larger nodes.
             requests:
-              cpu: "1000m"
-              memory: 1536Mi
+              cpu: "750m"
+              memory: 1280Mi
             limits:
               cpu: "1800m"
               memory: 3072Mi
