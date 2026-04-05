@@ -4,8 +4,10 @@ metadata:
   name: url-shortener
   labels:
     app: url-shortener
+  # Fewer, larger pods: more CPU headroom per request (helps p95 under load). Requires ≥2 nodes for spread.
+  # Total DB conns ≈ replicas × WEB_CONCURRENCY × DATABASE_MAX_CONNECTIONS — tune pool if you shrink replicas.
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: url-shortener
@@ -104,11 +106,11 @@ spec:
             failureThreshold: 8
           resources:
             requests:
-              cpu: 350m
-              memory: 600Mi
+              cpu: "1000m"
+              memory: 768Mi
             limits:
-              cpu: "600m"
-              memory: 1200Mi
+              cpu: "1800m"
+              memory: 1536Mi
 ---
 apiVersion: v1
 kind: Service
@@ -141,8 +143,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: url-shortener
-  minReplicas: 3
-  maxReplicas: 7
+  minReplicas: 2
+  maxReplicas: 6
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0

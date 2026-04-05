@@ -4,13 +4,13 @@ This is a practical capacity note for the current hackathon build, not a promise
 
 ## Current Shape
 
-- Baseline deployment: 3 replicas
-- Autoscaling range: 3 to 7 replicas
-- Per-pod request/limit:
-  - CPU request: `350m`
-  - CPU limit: `600m`
-  - memory request: `600Mi`
-  - memory limit: `1200Mi`
+- Baseline deployment: 2 replicas (fewer, larger pods; see `config/deployment.yml`)
+- Autoscaling range: 2 to 6 replicas
+- Per-pod request/limit (tune for your nodes):
+  - CPU request: `1000m`
+  - CPU limit: `1800m`
+  - memory request: `768Mi`
+  - memory limit: `1536Mi`
 - Gunicorn per pod:
   - `WEB_CONCURRENCY=2`
   - `GUNICORN_THREADS=10` (capped per worker by `DATABASE_MAX_CONNECTIONS` in `deployment/gunicorn.conf.py`)
