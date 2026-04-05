@@ -47,7 +47,13 @@ class LoggingSqlMixin:
     def execute_sql(self, sql, params=None, commit=None):
         started = time.perf_counter()
         try:
-            cursor = super().execute_sql(sql, params=params, commit=commit)
+            if commit is None:
+                cursor = super().execute_sql(sql, params)
+            else:
+                try:
+                    cursor = super().execute_sql(sql, params, commit)
+                except TypeError:
+                    cursor = super().execute_sql(sql, params)
         except Exception as error:
             duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
             extra = {
