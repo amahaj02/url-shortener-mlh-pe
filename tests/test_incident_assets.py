@@ -4,7 +4,7 @@ from pathlib import Path
 def test_monitoring_assets_exist_and_contain_core_identifiers():
     monitoring_file = Path("config/monitoring/url-shortener-monitoring.yml")
     dashboard_file = Path("config/monitoring/grafana-dashboard-url-shortener.json")
-    runbook_file = Path("docs/RUNBOOK.md")
+    runbook_file = Path("docs/runbook.md")
 
     assert monitoring_file.exists()
     assert dashboard_file.exists()

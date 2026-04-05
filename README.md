@@ -283,7 +283,7 @@ Import the dashboard JSON into Grafana, select your Prometheus data source, and 
 
 ### Runbook
 
-- Incident runbook: [docs/RUNBOOK.md](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/docs/RUNBOOK.md)
+- Incident runbook: [docs/runbook.md](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/docs/runbook.md)
 
 ### Sherlock Mode
 

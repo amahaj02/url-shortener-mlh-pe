@@ -14,7 +14,7 @@ Use this when any of the following alerts fire:
 
 - Dashboard JSON: [config/monitoring/grafana-dashboard-url-shortener.json](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/config/monitoring/grafana-dashboard-url-shortener.json)
 - Alert rules: [config/monitoring/url-shortener-monitoring.yml](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/config/monitoring/url-shortener-monitoring.yml)
-- Failure modes: [docs/FAILURE_MODES.md](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/docs/FAILURE_MODES.md)
+- Failure modes: [docs/failure_modes.md](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/docs/failure_modes.md)
 
 ### First 5 Minutes
 
