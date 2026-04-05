@@ -17,6 +17,15 @@ def test_metrics_endpoint_returns_usage_data(client):
     assert "pid" in payload["process"]
 
 
+def test_prometheus_metrics_endpoint_returns_prometheus_text(client):
+    response = client.get("/metrics/prometheus")
+
+    assert response.status_code == 200
+    assert "text/plain" in response.content_type
+    body = response.get_data(as_text=True)
+    assert "http_requests_total" in body or "url_shortener_http_requests_total" in body
+
+
 def test_json_formatter_outputs_structured_json():
     formatter = JsonFormatter()
     record = logging.LogRecord(
