@@ -266,7 +266,7 @@ def redirect_short_url(short_code):
         "short_url_redirect",
         extra={
             "component": "urls",
-            "url_id": url_entry.id,
+            "url_id": getattr(url_entry, "id", None),
             "short_code": url_entry.short_code,
             "cache_hit": cached is not None,
         },
