@@ -25,15 +25,15 @@ spec:
             # Private DOCR pulls need credentials; created by: doctl registry kubernetes-manifest <name> --namespace default | kubectl apply -f -
             imagePullSecrets:
                 - name: <IMAGE_PULL_SECRET>
-            affinity:
-                podAffinity:
-                    preferredDuringSchedulingIgnoredDuringExecution:
-                        - weight: 100
-                          podAffinityTerm:
-                              labelSelector:
-                                  matchLabels:
-                                      app: url-shortener
-                              topologyKey: kubernetes.io/hostname
+            # Spread replicas across nodes so the cloud LB can target healthy backends per-node evenly.
+            # (Previous podAffinity preferred packing on one node, which hurts distribution and HA.)
+            topologySpreadConstraints:
+                - maxSkew: 1
+                  topologyKey: kubernetes.io/hostname
+                  whenUnsatisfiable: ScheduleAnyway
+                  labelSelector:
+                      matchLabels:
+                          app: url-shortener
             containers:
                 - name: url-shortener
                   image: <IMAGE>
@@ -114,8 +114,14 @@ apiVersion: v1
 kind: Service
 metadata:
     name: url-shortener-service
+    annotations:
+        # DO LB: avoid long-lived backend connections that pin traffic to a subset of pods.
+        service.beta.kubernetes.io/do-loadbalancer-enable-backend-keepalive: "false"
+        service.beta.kubernetes.io/do-loadbalancer-sticky-sessions-type: "none"
 spec:
     type: LoadBalancer
+    sessionAffinity: "None"
+    externalTrafficPolicy: Cluster
     ports:
         - name: http
           protocol: TCP

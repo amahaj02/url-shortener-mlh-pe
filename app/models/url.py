@@ -7,6 +7,9 @@ from app.models.user import User
 
 SHORT_CODE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
+# Base62(id) can equal a top-level path segment; Flask would match the API route first.
+RESERVED_SHORT_CODES = frozenset({"health", "metrics", "users", "urls", "events"})
+
 
 class Url(BaseModel):
     class Meta:
@@ -36,7 +39,10 @@ class Url(BaseModel):
             value, remainder = divmod(value, base)
             encoded.append(SHORT_CODE_ALPHABET[remainder])
 
-        return "".join(reversed(encoded))
+        code = "".join(reversed(encoded))
+        if code in RESERVED_SHORT_CODES:
+            return f"{code}-"
+        return code
 
     def to_dict(self):
         return {
