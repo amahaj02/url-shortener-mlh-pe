@@ -123,8 +123,8 @@ The cluster deployment currently overrides some values directly in `config/deplo
 - `PORT=8000`
 - `GUNICORN_BIND=0.0.0.0:8000`
 - `WEB_CONCURRENCY=1`
-- `GUNICORN_THREADS=7`
-- `DATABASE_MAX_CONNECTIONS=7` (Postgres 25 total / 3 reserved → 22 app budget; `3×1×7=21` at max replicas; see [capacity-plan.md](./capacity-plan.md))
+- `GUNICORN_THREADS=64` (with `GUNICORN_THREADS_CAP_TO_POOL=false` in the manifest)
+- `DATABASE_MAX_CONNECTIONS=48` (e.g. `3×1×48≈144` app conns at max replicas when `max_connections` ≈ 197; see [capacity-plan.md](./capacity-plan.md))
 - HPA `minReplicas=2`, `maxReplicas=3`; targets **CPU** average **50%** and **memory** average **70%** of request (per-pod resources in `config/deployment.yml`; see [capacity-plan.md](./capacity-plan.md))
 
 ## Repo-Managed Kubernetes Manifests

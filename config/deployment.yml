@@ -73,16 +73,16 @@ spec:
               value: "0"
             - name: GUNICORN_LOG_LEVEL
               value: "info"
-            # Postgres: 25 max_connections, 3 reserved → 22 app budget. Peak app conns = maxReplicas × WEB_CONCURRENCY × pool.
-            # 3×1×7=21 ≤ 22 (two workers per pod would cap floor(22/6)=3 → only 18 conns).
+            # Postgres max_connections (e.g. 197): peak app ≈ maxReplicas × WEB_CONCURRENCY × pool.
+            # Example: 3×1×48=144 leaves headroom for superuser / other clients.
             - name: DATABASE_MAX_CONNECTIONS
-              value: "7"
+              value: "48"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
               value: "0"
             - name: WEB_CONCURRENCY
               value: "1"
             - name: GUNICORN_THREADS
-              value: "7"
+              value: "64"
             - name: GUNICORN_THREADS_CAP_TO_POOL
               value: "false"
           readinessProbe:

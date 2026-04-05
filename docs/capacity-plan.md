@@ -9,13 +9,13 @@ This is a practical capacity note for the current hackathon build, not a promise
 - Per-pod request/limit (`config/deployment.yml`):
   - CPU request: `1000m`
   - CPU limit: `1800m`
-  - memory request: `768Mi`
-  - memory limit: `1536Mi`
-- Postgres: **25** `max_connections` cluster-wide, **3** reserved (maintenance) → **22** usable for the app (see `deployment.yml` env).
+  - memory request: `1536Mi`
+  - memory limit: `3072Mi`
+- Postgres: sized for a larger cluster (e.g. **`max_connections` ≈ 197**). App pool per worker **`DATABASE_MAX_CONNECTIONS=48`** → at HPA **max 3** replicas, **`3×1×48 ≈ 144`** app connections, leaving headroom for reserved roles and other clients.
 - Gunicorn per pod:
-  - `WEB_CONCURRENCY=1` (one process per pod so pool size can be **7** and stay at or under 22 total: `3×1×7=21`)
-  - `GUNICORN_THREADS=7` (capped to Peewee pool in `deployment/gunicorn.conf.py`)
-  - `DATABASE_MAX_CONNECTIONS=7` per worker — **21** connections at HPA max; **1** left unused (22 is not divisible evenly across six pools from 3×2 workers, so we use 1×7 per pod instead of 2×3)
+  - `WEB_CONCURRENCY=1`
+  - `GUNICORN_THREADS=64` with `GUNICORN_THREADS_CAP_TO_POOL=false` (threads share the Peewee pool; Redis-first redirects reduce DB waits)
+  - `DATABASE_MAX_CONNECTIONS=48` per worker (see `deployment/gunicorn.conf.py` for thread/pool interaction)
 
 ## Load-Test Entry Points
 
@@ -35,7 +35,7 @@ The likely limits for this app are:
 
 ### If k6 shows `dial: i/o timeout` and pods look memory-heavy (k9s)
 
-That usually means the **load generator opened far more concurrent connections than the service can accept quickly**. With **`WEB_CONCURRENCY=1`** and **`GUNICORN_THREADS=7`**, each pod handles on the order of **~7 concurrent Flask requests**; two replicas ≈ **~14** in-flight requests across the app tier before queueing explodes. **`VU_RAMP=1` + `VUS=500`** on `k6_redis_redirect_cache.js` tries to run **hundreds** of parallel clients — many requests sit in OS/LB queues, connections stall, and you see **timeouts** and **high RSS** (buffers, queued work), not necessarily a “Redis bug.”
+That usually means the **load generator opened far more concurrent connections than the service can accept quickly**. With **`WEB_CONCURRENCY=1`**, **`GUNICORN_THREADS` in the 60s**, and a **Peewee pool** per pod (`DATABASE_MAX_CONNECTIONS`), each pod still has a **finite** number of worker threads and DB slots; **`VU_RAMP=1` + `VUS=500`** can offer **far more parallel clients** than that — many requests sit in OS/LB queues, connections stall, and you see **timeouts** and **high RSS** (buffers, queued work), not necessarily a “Redis bug.”
 
 **Redirects are not cache-only:** every `GET /<short_code>` still does a DB lookup for `Url`, Redis get/set, and **enqueues a click event** (`Event.create_event` → **`app/event_pipeline.py`** batched `insert_many`). Clicks are **not** one synchronous insert per request in production; tune **`EVENT_BATCH_SIZE`** / **`EVENT_FLUSH_INTERVAL_SEC`** if needed. Heavy redirect tests are still **write-amplified** (many events, batched flushes).
 
