@@ -4,7 +4,7 @@ metadata:
   name: url-shortener
   labels:
     app: url-shortener
-  # Per-pod CPU/memory tuned for Gunicorn + Peewee; HPA min 2 / max 3 replicas.
+  # Per-pod CPU/memory tuned for Gunicorn + Peewee; HPA min 2 / max 3 (CPU + memory targets).
   # Total DB conns ≈ replicas × WEB_CONCURRENCY × DATABASE_MAX_CONNECTIONS — tune pool if you change replicas.
 spec:
   replicas: 2
@@ -171,3 +171,9 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
