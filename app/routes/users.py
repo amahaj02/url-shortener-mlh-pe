@@ -109,7 +109,10 @@ def bulk_import_users():
         event_type="bulk_users_imported",
         details={"imported_row_count": count},
     )
-    logger.info("bulk user import complete rows=%s", count)
+    logger.info(
+        "bulk_users_imported",
+        extra={"component": "users", "imported_row_count": count},
+    )
 
     return jsonify(count=count), 201
 
@@ -166,9 +169,19 @@ def create_user():
             .first()
         )
         if existing_user is not None:
-            logger.info("create user idempotent hit username=%s", existing_user.username)
+            logger.info(
+                "user_create_idempotent",
+                extra={
+                    "component": "users",
+                    "user_id": existing_user.id,
+                    "username": existing_user.username,
+                },
+            )
             return jsonify(existing_user.to_dict()), 201
-        logger.warning("create user conflict username=%s", payload.get("username"))
+        logger.warning(
+            "user_create_conflict",
+            extra={"component": "users", "username": payload.get("username")},
+        )
         return jsonify(errors={"user": "username or email already exists"}), 409
 
     Event.create_event(
@@ -177,7 +190,10 @@ def create_user():
         event_type="user_created",
         details={"username": user.username, "email": user.email},
     )
-    logger.info("user created id=%s", user.id)
+    logger.info(
+        "user_created",
+        extra={"component": "users", "user_id": user.id, "username": user.username},
+    )
 
     return jsonify(user.to_dict()), 201
 
@@ -211,7 +227,10 @@ def update_user(user_id):
     try:
         user.save()
     except IntegrityError:
-        logger.warning("update user conflict user_id=%s", user_id)
+        logger.warning(
+            "user_update_conflict",
+            extra={"component": "users", "user_id": user_id},
+        )
         return jsonify(errors={"user": "username or email already exists"}), 409
 
     Event.create_event(
@@ -220,7 +239,10 @@ def update_user(user_id):
         event_type="user_updated",
         details={"username": user.username, "email": user.email},
     )
-    logger.info("user updated id=%s", user.id)
+    logger.info(
+        "user_updated",
+        extra={"component": "users", "user_id": user.id},
+    )
 
     return jsonify(user.to_dict())
 
@@ -231,5 +253,8 @@ def delete_user(user_id):
     if deleted == 0:
         return jsonify(error="User not found"), 404
 
-    logger.info("user deleted id=%s", user_id)
+    logger.info(
+        "user_deleted",
+        extra={"component": "users", "user_id": user_id},
+    )
     return ("", 204)
