@@ -1,6 +1,7 @@
 import json
 import logging
 
+from app import create_app
 from app.logging_config import JsonFormatter, RequestContextFilter, clear_log_context, set_log_context
 
 
@@ -82,3 +83,16 @@ def test_request_context_filter_injects_request_metadata_and_omits_nulls():
         assert "slow_query" not in payload
     finally:
         clear_log_context()
+
+
+def test_404_and_405_handlers_return_json(test_db):
+    app = create_app(testing=True)
+    client = app.test_client()
+
+    missing = client.get("/definitely/not/here")
+    wrong_method = client.put("/health")
+
+    assert missing.status_code == 404
+    assert missing.get_json() == {"error": "Not found"}
+    assert wrong_method.status_code == 405
+    assert wrong_method.get_json() == {"error": "Method not allowed"}

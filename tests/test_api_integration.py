@@ -668,6 +668,18 @@ def test_delete_user_returns_204(client, test_db):
     assert User.select().where(User.id == user.id).count() == 0
 
 
+def test_get_delete_user_missing_returns_404(client, test_db):
+    assert client.get("/users/99999").status_code == 404
+    assert client.delete("/users/99999").status_code == 404
+
+
+def test_list_users_rejects_invalid_pagination(client, test_db):
+    response = client.get("/users?page=abc&per_page=10")
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["pagination"] == "page and per_page must be integers"
+
+
 def test_delete_url_returns_204(client, test_db):
     user = User.create(username="delete-url", email="delete-url@example.com")
     url_entry = Url.create(user=user, short_code="delurl", original_url="https://example.com/delete", is_active=True)
@@ -692,6 +704,16 @@ def test_events_endpoint_filters_by_url_and_event_type(client, test_db):
     assert all(item["url_id"] == url_a.id for item in by_url.get_json())
     assert by_type.status_code == 200
     assert all(item["event_type"] == "click" for item in by_type.get_json())
+
+
+def test_events_endpoint_rejects_invalid_query_params(client, test_db):
+    bad_url = client.get("/events?url_id=abc")
+    bad_user = client.get("/events?user_id=abc")
+
+    assert bad_url.status_code == 400
+    assert bad_url.get_json()["errors"]["url_id"] == "url_id must be an integer"
+    assert bad_user.status_code == 400
+    assert bad_user.get_json()["errors"]["user_id"] == "user_id must be an integer"
 
 
 def test_create_event_returns_201(client, test_db):
@@ -733,6 +755,40 @@ def test_create_event_accepts_null_details_as_empty_object(client, test_db):
     assert response.get_json()["details"] == {}
 
 
+def test_create_event_rejects_invalid_details_type(client, test_db):
+    user = User.create(username="bad-det", email="bad-det@example.com")
+    url_entry = Url.create(user=user, short_code="det01", original_url="https://example.com/det", is_active=True)
+
+    response = client.post(
+        "/events",
+        json={
+            "url_id": url_entry.id,
+            "user_id": user.id,
+            "event_type": "click",
+            "details": "not-an-object",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["details"] == "details must be a JSON object"
+
+
+def test_create_event_returns_404_for_missing_url_and_user(client, test_db):
+    missing_url = client.post(
+        "/events",
+        json={"url_id": 99999, "user_id": None, "event_type": "click", "details": {}},
+    )
+    missing_user = client.post(
+        "/events",
+        json={"url_id": None, "user_id": 99999, "event_type": "click", "details": {}},
+    )
+
+    assert missing_url.status_code == 404
+    assert missing_url.get_json() == {"error": "URL not found"}
+    assert missing_user.status_code == 404
+    assert missing_user.get_json() == {"error": "User not found"}
+
+
 def test_create_event_rejects_json_boolean_disguised_as_integer_ids(client, test_db):
     user = User.create(username="bool-evt", email="bool-evt@example.com")
     url_entry = Url.create(user=user, short_code="bool01", original_url="https://example.com/bool", is_active=True)
@@ -760,6 +816,13 @@ def test_create_event_rejects_json_boolean_disguised_as_integer_ids(client, test
     )
     assert r_user.status_code == 400
     assert "user_id" in r_user.get_json()["errors"]
+
+
+def test_bulk_import_users_requires_file_upload(client, test_db):
+    response = client.post("/users/bulk", data={}, content_type="multipart/form-data")
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["file"] == "multipart file upload is required"
 
 
 def test_clear_db_endpoint_deletes_all_rows(client, test_db):
