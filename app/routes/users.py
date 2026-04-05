@@ -68,10 +68,6 @@ def _build_user_create_fields(row):
     if created_at is not None:
         create_fields["created_at"] = created_at
 
-    raw_id = (row.get("id") or "").strip()
-    if raw_id.isdigit():
-        create_fields["id"] = int(raw_id)
-
     return create_fields
 
 
