@@ -13,6 +13,7 @@ from app.models.event import Event
 from app.models.url import Url
 
 urls_bp = Blueprint("urls", __name__)
+redirect_bp = Blueprint("redirect", __name__)
 logger = logging.getLogger(__name__)
 
 
@@ -32,24 +33,51 @@ def _resolve_user_id(url_entry):
     return getattr(user, "id", None)
 
 
+def _event_client_ip():
+    """Client IP: first non-empty address in X-Forwarded-For, else remote_addr."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        for part in forwarded.split(","):
+            ip = part.strip()
+            if ip:
+                return ip
+    return request.remote_addr
+
+
+def _coerce_active_flag(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "on"}
+    return bool(value)
+
+
+def _normalize_title(value):
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped if stripped else None
+
+
+def _parse_query_bool(raw):
+    """Query param is_active: true/false (case-insensitive) or 1/0."""
+    s = raw.strip().lower()
+    if s in {"true", "1"}:
+        return True
+    if s in {"false", "0"}:
+        return False
+    return None
+
+
 def _is_user_fk_violation(error):
     message = str(error).lower()
     return "foreign key" in message or "url_user_id_fkey" in message
 
 
-def _parse_user_id(value):
-    """Accept JSON int, whole float (common from JS/k6), or numeric string."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
+def _parse_user_id_json(value):
+    """POST /urls: JSON user_id must be a true integer (rejects bool, float, str)."""
+    if type(value) is int:
         return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return None
     return None
 
 
@@ -59,7 +87,13 @@ def create_url():
     if err:
         return err
 
-    user_id = _parse_user_id(payload.get("user_id"))
+    allowed_create = {"user_id", "original_url", "title"}
+    if set(payload.keys()) - allowed_create:
+        return jsonify(
+            errors={"payload": "Only user_id, original_url and title can be provided"},
+        ), 400
+
+    user_id = _parse_user_id_json(payload.get("user_id"))
     original_url = payload.get("original_url")
     title = payload.get("title")
 
@@ -77,7 +111,7 @@ def create_url():
         url_entry = Url.create(
             user=user_id,
             original_url=original_url.strip(),
-            title=title.strip() if isinstance(title, str) else None,
+            title=_normalize_title(title) if title is not None else None,
             is_active=True,
         )
     except IntegrityError as error:
@@ -126,10 +160,12 @@ def list_urls():
 
     is_active = request.args.get("is_active")
     if is_active is not None:
-        normalized = is_active.strip().lower()
-        if normalized not in {"true", "false"}:
-            return jsonify(errors={"is_active": "is_active must be true or false"}), 400
-        query = query.where(Url.is_active == (normalized == "true"))
+        normalized = _parse_query_bool(is_active)
+        if normalized is None:
+            return jsonify(
+                errors={"is_active": "is_active must be true, false, 1, or 0"},
+            ), 400
+        query = query.where(Url.is_active == normalized)
 
     return jsonify([url_entry.to_dict() for url_entry in query.iterator()])
 
@@ -149,7 +185,7 @@ def update_url(url_id):
     payload, err = require_json_object()
     if err:
         return err
-    if not payload:
+    if len(payload) == 0:
         return jsonify(errors={"payload": "JSON object with updatable fields is required"}), 400
 
     allowed = {"title", "is_active", "original_url"}
@@ -173,7 +209,7 @@ def update_url(url_id):
 
     if "title" in payload:
         raw_title = payload["title"]
-        url_entry.title = raw_title.strip() if isinstance(raw_title, str) else None
+        url_entry.title = _normalize_title(raw_title) if raw_title is not None else None
     if "is_active" in payload:
         url_entry.is_active = payload["is_active"]
     if "original_url" in payload:
@@ -228,7 +264,7 @@ def delete_url(url_id):
     return ("", 204)
 
 
-@urls_bp.route("/<string:short_code>", methods=["GET"])
+@redirect_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_url(short_code):
     cached = get_short_link(short_code)
     if cached is not None:
@@ -236,7 +272,7 @@ def redirect_short_url(short_code):
             id=cached["id"],
             short_code=cached["short_code"],
             original_url=cached["original_url"],
-            is_active=cached["is_active"],
+            is_active=_coerce_active_flag(cached["is_active"]),
             user_id=cached.get("user_id"),
         )
     else:
@@ -256,7 +292,7 @@ def redirect_short_url(short_code):
         details={
             "short_code": url_entry.short_code,
             "original_url": url_entry.original_url,
-            "ip_address": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip_address": _event_client_ip(),
             "user_agent": request.user_agent.string,
         },
         immediate=True,

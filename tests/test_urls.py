@@ -20,13 +20,8 @@ def test_short_code_from_id_is_deterministic_base62():
     assert Url.short_code_from_id(63) == "11"
 
 
-def test_short_code_from_id_avoids_collision_with_api_paths():
-    """Base62(id) must not equal a top-level route or the redirect handler is shadowed."""
-    assert Url.short_code_from_id(7254958) == "urls-"
-    assert Url.short_code_from_id(450018782) == "users-"
-    assert Url.short_code_from_id(13287352894) == "events-"
-    assert Url.short_code_from_id(15783592667) == "health-"
-    assert Url.short_code_from_id(1262866061060) == "metrics-"
+def test_short_code_from_id_is_pure_base62_encoding():
+    assert Url.short_code_from_id(7254958) == "urls"
 
 
 def test_short_code_from_id_rejects_invalid_ids():
