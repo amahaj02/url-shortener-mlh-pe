@@ -10,6 +10,8 @@ What we implemented:
 - a repeatable 50-user concurrent spike script as the baseline
 - documented latency/error-rate output from k6 runs during testing
 
+**Verification (install k6, 50 concurrent users, p95 + error rate, screenshot):** see [LOAD_TEST_BASELINE.md](../../LOAD_TEST_BASELINE.md).
+
 Current perf entrypoints:
 
 - `tests/perf/k6_50_concurrent_spike.js`
