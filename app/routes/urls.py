@@ -37,18 +37,34 @@ def _is_user_fk_violation(error):
     return "foreign key" in message or "url_user_id_fkey" in message
 
 
+def _parse_user_id(value):
+    """Accept JSON int, whole float (common from JS/k6), or numeric string."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 @urls_bp.route("/urls", methods=["POST"])
 def create_url():
     payload, err = require_json_object()
     if err:
         return err
 
-    user_id = payload.get("user_id")
+    user_id = _parse_user_id(payload.get("user_id"))
     original_url = payload.get("original_url")
     title = payload.get("title")
 
     errors = {}
-    if not isinstance(user_id, int):
+    if user_id is None:
         errors["user_id"] = "user_id must be an integer"
     if not _is_valid_url(original_url):
         errors["original_url"] = "original_url must be a valid http/https URL"
