@@ -3,7 +3,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
-from flask import Blueprint, jsonify, redirect, request
+from flask import Blueprint, jsonify, make_response, request
 from peewee import IntegrityError
 
 from app.cache import delete_short_link, get_short_link, set_short_link
@@ -44,11 +44,18 @@ def _event_client_ip():
     return request.remote_addr
 
 
-def _coerce_active_flag(value):
+def _coerce_cached_is_active(value):
+    """Normalize is_active from Redis/JSON (bool, int 0/1, str)."""
     if isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        return value != 0
     if isinstance(value, str):
-        return value.strip().lower() in {"true", "1", "yes", "on"}
+        s = value.strip().lower()
+        if s in {"1", "true"}:
+            return True
+        if s in {"0", "false"}:
+            return False
     return bool(value)
 
 
@@ -74,13 +81,6 @@ def _is_user_fk_violation(error):
     return "foreign key" in message or "url_user_id_fkey" in message
 
 
-def _parse_user_id_json(value):
-    """POST /urls: JSON user_id must be a true integer (rejects bool, float, str)."""
-    if type(value) is int:
-        return value
-    return None
-
-
 @urls_bp.route("/urls", methods=["POST"])
 def create_url():
     payload, err = require_json_object()
@@ -93,20 +93,31 @@ def create_url():
             errors={"payload": "Only user_id, original_url and title can be provided"},
         ), 400
 
-    user_id = _parse_user_id_json(payload.get("user_id"))
-    original_url = payload.get("original_url")
-    title = payload.get("title")
-
     errors = {}
-    if user_id is None:
-        errors["user_id"] = "user_id must be an integer"
-    if not _is_valid_url(original_url):
-        errors["original_url"] = "original_url must be a valid http/https URL"
-    if title is not None and not isinstance(title, str):
-        errors["title"] = "title must be a string"
+    uid_raw = payload.get("user_id")
+    if type(uid_raw) is int:
+        user_id = uid_raw
+    else:
+        user_id = None
+        errors["user_id"] = "must be an integer"
+
+    original_url = payload.get("original_url")
+    if not isinstance(original_url, str):
+        errors["original_url"] = "must be a non-empty string"
+    elif not original_url.strip():
+        errors["original_url"] = "must be a non-empty string"
+    elif not _is_valid_url(original_url):
+        errors["original_url"] = "must be a valid http or https URL"
+
+    if "title" in payload:
+        tv = payload["title"]
+        if tv is not None and not isinstance(tv, str):
+            errors["title"] = "must be a string"
+
     if errors:
         return jsonify(errors=errors), 400
 
+    title = payload.get("title")
     try:
         url_entry = Url.create(
             user=user_id,
@@ -155,7 +166,7 @@ def list_urls():
         try:
             user_id_num = int(user_id)
         except ValueError:
-            return jsonify(errors={"user_id": "user_id must be an integer"}), 400
+            return jsonify(errors={"user_id": "must be an integer"}), 400
         query = query.where(Url.user == user_id_num)
 
     is_active = request.args.get("is_active")
@@ -163,7 +174,7 @@ def list_urls():
         normalized = _parse_query_bool(is_active)
         if normalized is None:
             return jsonify(
-                errors={"is_active": "is_active must be true, false, 1, or 0"},
+                errors={"is_active": "must be true, false, 1, or 0"},
             ), 400
         query = query.where(Url.is_active == normalized)
 
@@ -175,7 +186,7 @@ def get_url(url_id):
     try:
         url_entry = Url.get_by_id(url_id)
     except Url.DoesNotExist:
-        return jsonify(error="URL not found"), 404
+        return jsonify(error="Resource not found"), 404
 
     return jsonify(url_entry.to_dict())
 
@@ -194,18 +205,24 @@ def update_url(url_id):
 
     errors = {}
     if "title" in payload and payload["title"] is not None and not isinstance(payload["title"], str):
-        errors["title"] = "title must be a string"
+        errors["title"] = "must be a string"
     if "is_active" in payload and not isinstance(payload["is_active"], bool):
-        errors["is_active"] = "is_active must be a boolean"
-    if "original_url" in payload and not _is_valid_url(payload["original_url"]):
-        errors["original_url"] = "original_url must be a valid http/https URL"
+        errors["is_active"] = "must be a boolean"
+    if "original_url" in payload:
+        ou = payload["original_url"]
+        if not isinstance(ou, str):
+            errors["original_url"] = "must be a non-empty string"
+        elif not ou.strip():
+            errors["original_url"] = "must be a non-empty string"
+        elif not _is_valid_url(ou):
+            errors["original_url"] = "must be a valid http or https URL"
     if errors:
         return jsonify(errors=errors), 400
 
     try:
         url_entry = Url.get_by_id(url_id)
     except Url.DoesNotExist:
-        return jsonify(error="URL not found"), 404
+        return jsonify(error="Resource not found"), 404
 
     if "title" in payload:
         raw_title = payload["title"]
@@ -251,7 +268,7 @@ def delete_url(url_id):
     try:
         url_entry = Url.get_by_id(url_id)
     except Url.DoesNotExist:
-        return jsonify(error="URL not found"), 404
+        return jsonify(error="Resource not found"), 404
 
     short_code = url_entry.short_code
     Url.delete().where(Url.id == url_id).execute()
@@ -272,14 +289,14 @@ def redirect_short_url(short_code):
             id=cached["id"],
             short_code=cached["short_code"],
             original_url=cached["original_url"],
-            is_active=_coerce_active_flag(cached["is_active"]),
+            is_active=_coerce_cached_is_active(cached["is_active"]),
             user_id=cached.get("user_id"),
         )
     else:
         try:
             url_entry = Url.get(Url.short_code == short_code)
         except Url.DoesNotExist:
-            return jsonify(error="Short URL not found"), 404
+            return jsonify(error="Resource not found"), 404
         set_short_link(url_entry)
 
     if not url_entry.is_active:
@@ -308,4 +325,6 @@ def redirect_short_url(short_code):
         },
     )
 
-    return redirect(url_entry.original_url, code=302)
+    response = make_response("", 302)
+    response.headers["Location"] = url_entry.original_url
+    return response

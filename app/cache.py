@@ -120,7 +120,7 @@ def get_short_link(short_code: str) -> dict[str, Any] | None:
         return None
     if not isinstance(data, dict):
         return None
-    for field in ("id", "original_url", "is_active", "short_code"):
+    for field in ("id", "short_code", "original_url", "is_active", "user_id"):
         if field not in data:
             return None
     return data
@@ -136,11 +136,12 @@ def set_short_link(url_entry) -> None:
     row_id = getattr(url_entry, "id", None)
     if row_id is None:
         return
+    is_active = bool(getattr(url_entry, "is_active", True))
     payload = {
         "id": row_id,
         "short_code": sc,
         "original_url": url_entry.original_url,
-        "is_active": bool(getattr(url_entry, "is_active", True)),
+        "is_active": is_active,
         "user_id": getattr(url_entry, "user_id", None),
     }
     try:

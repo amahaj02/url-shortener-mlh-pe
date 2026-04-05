@@ -5,7 +5,9 @@ from peewee import AutoField, BooleanField, CharField, DateTimeField, ForeignKey
 from app.database import BaseModel
 from app.models.user import User
 
-SHORT_CODE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+SHORT_CODE_ALPHABET = (
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+)
 
 
 class Url(BaseModel):

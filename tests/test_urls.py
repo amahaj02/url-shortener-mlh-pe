@@ -15,13 +15,14 @@ def test_is_valid_url_accepts_http_and_https_only():
 
 def test_short_code_from_id_is_deterministic_base62():
     assert Url.short_code_from_id(1) == "1"
-    assert Url.short_code_from_id(61) == "Z"
+    assert Url.short_code_from_id(10) == "A"
+    assert Url.short_code_from_id(61) == "z"
     assert Url.short_code_from_id(62) == "10"
     assert Url.short_code_from_id(63) == "11"
 
 
 def test_short_code_from_id_is_pure_base62_encoding():
-    assert Url.short_code_from_id(7254958) == "urls"
+    assert Url.short_code_from_id(7254958) == "URLS"
 
 
 def test_short_code_from_id_rejects_invalid_ids():
@@ -46,7 +47,7 @@ def test_redirect_short_url_returns_404_for_missing_code(client, monkeypatch):
     response = client.get("/missing")
 
     assert response.status_code == 404
-    assert response.get_json() == {"error": "Short URL not found"}
+    assert response.get_json() == {"error": "Resource not found"}
 
 
 def test_redirect_short_url_returns_410_for_inactive_code(client, monkeypatch):

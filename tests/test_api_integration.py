@@ -302,7 +302,7 @@ def test_unknown_short_code_returns_404_without_recording_event(client, test_db)
     response = client.get("/noSuchCodeZZ9")
 
     assert response.status_code == 404
-    assert response.get_json() == {"error": "Short URL not found"}
+    assert response.get_json() == {"error": "Resource not found"}
     assert Event.select().count() == events_before
 
 
@@ -345,7 +345,7 @@ def test_create_url_rejects_non_numeric_user_id_string(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+    assert response.get_json()["errors"]["user_id"] == "must be an integer"
 
 
 def test_create_url_rejects_string_user_id(client, test_db):
@@ -360,7 +360,7 @@ def test_create_url_rejects_string_user_id(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+    assert response.get_json()["errors"]["user_id"] == "must be an integer"
 
 
 def test_create_url_rejects_boolean_user_id(client, test_db):
@@ -373,7 +373,7 @@ def test_create_url_rejects_boolean_user_id(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+    assert response.get_json()["errors"]["user_id"] == "must be an integer"
 
 
 def test_create_url_rejects_non_string_title(client, test_db):
@@ -389,7 +389,7 @@ def test_create_url_rejects_non_string_title(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json()["errors"]["title"] == "title must be a string"
+    assert response.get_json()["errors"]["title"] == "must be a string"
 
 
 def test_deactivated_url_returns_410_without_redirect_event(client, test_db):
@@ -485,14 +485,14 @@ def test_create_url_rejects_non_http_scheme(client, test_db):
     )
 
     assert response.status_code == 400
-    assert response.get_json()["errors"]["original_url"] == "original_url must be a valid http/https URL"
+    assert response.get_json()["errors"]["original_url"] == "must be a valid http or https URL"
 
 
 def test_list_urls_rejects_non_integer_user_id_query(client, test_db):
     response = client.get("/urls?user_id=not-an-int")
 
     assert response.status_code == 400
-    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+    assert response.get_json()["errors"]["user_id"] == "must be an integer"
 
 
 def test_unknown_route_returns_json_404(client, test_db):

@@ -70,6 +70,10 @@ def _insert_one_sync(url_id: int | None, user_id: int | None, event_type: str, d
             details=json.dumps(details),
             timestamp=datetime.utcnow(),
         ).execute()
+    try:
+        db.commit()
+    except Exception:
+        pass
 
 
 def enqueue(url_id: int | None, user_id: int | None, event_type: str, details: dict[str, Any]) -> None:
