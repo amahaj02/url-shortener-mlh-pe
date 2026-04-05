@@ -24,7 +24,3 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=70"
-
-# TEMP: remove when app/temp_discord_request_dump.py is deleted
-[tool.coverage.run]
-omit = ["app/temp_discord_request_dump.py"]

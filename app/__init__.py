@@ -13,7 +13,6 @@ from app.database import close_db, connect_db, db, init_db
 from app.logging_config import clear_log_context, configure_logging, set_log_context
 from app.prometheus_metrics import finish_exception, finish_request, render_metrics, start_request_timer
 from app.routes import register_routes
-from app.temp_discord_request_dump import register_temp_discord_request_dump
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +130,6 @@ def create_app(testing=None):
                 finish_exception(exception)
 
     register_routes(app)
-
-    # TEMP: remove register_temp_discord_request_dump + app/temp_discord_request_dump.py when done
-    register_temp_discord_request_dump(app)
 
     @app.route("/health")
     def health():
