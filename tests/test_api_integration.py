@@ -281,8 +281,23 @@ def test_two_creations_same_destination_get_distinct_short_codes(client, test_db
     assert b["short_code"] == Url.short_code_from_id(b["id"])
 
 
-def test_create_url_rejects_string_user_id(client, test_db):
+def test_create_url_rejects_non_numeric_user_id_string(client, test_db):
     user = User.create(username="strid", email="strid@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": "not-a-valid-id",
+            "original_url": "https://example.com/x",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+
+
+def test_create_url_accepts_numeric_string_user_id(client, test_db):
+    user = User.create(username="strid2", email="strid2@example.com")
 
     response = client.post(
         "/urls",
@@ -292,8 +307,8 @@ def test_create_url_rejects_string_user_id(client, test_db):
         },
     )
 
-    assert response.status_code == 400
-    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+    assert response.status_code == 201
+    assert response.get_json()["user_id"] == user.id
 
 
 def test_create_url_rejects_non_string_title(client, test_db):

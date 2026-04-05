@@ -26,7 +26,11 @@ def test_db(app):
 
 
 @pytest.fixture(autouse=True)
-def clean_db(test_db):
+def clean_db(test_db, app):
+    from app.cache import clear_namespace
+
+    with app.app_context():
+        clear_namespace()
     for model in reversed(ALL_MODELS):
         model.delete().execute()
     yield

@@ -1,10 +1,12 @@
 import logging
 from datetime import datetime
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError
 
+from app.cache import delete_short_link, get_short_link, set_short_link
 from app.database import db
 from app.json_request import require_json_object
 from app.models.event import Event
@@ -35,18 +37,34 @@ def _is_user_fk_violation(error):
     return "foreign key" in message or "url_user_id_fkey" in message
 
 
+def _parse_user_id(value):
+    """Accept JSON int, whole float (common from JS/k6), or numeric string."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 @urls_bp.route("/urls", methods=["POST"])
 def create_url():
     payload, err = require_json_object()
     if err:
         return err
 
-    user_id = payload.get("user_id")
+    user_id = _parse_user_id(payload.get("user_id"))
     original_url = payload.get("original_url")
     title = payload.get("title")
 
     errors = {}
-    if not isinstance(user_id, int):
+    if user_id is None:
         errors["user_id"] = "user_id must be an integer"
     if not _is_valid_url(original_url):
         errors["original_url"] = "original_url must be a valid http/https URL"
@@ -80,6 +98,8 @@ def create_url():
         },
     )
     logger.info("url created id=%s short_code=%s", url_entry.id, url_entry.short_code)
+
+    set_short_link(url_entry)
 
     return jsonify(url_entry.to_dict()), 201
 
@@ -169,14 +189,21 @@ def update_url(url_id):
     )
     logger.info("url updated id=%s", url_id)
 
+    set_short_link(url_entry)
+
     return jsonify(url_entry.to_dict())
 
 
 @urls_bp.route("/urls/<int:url_id>", methods=["DELETE"])
 def delete_url(url_id):
-    deleted = Url.delete().where(Url.id == url_id).execute()
-    if deleted == 0:
+    try:
+        url_entry = Url.get_by_id(url_id)
+    except Url.DoesNotExist:
         return jsonify(error="URL not found"), 404
+
+    short_code = url_entry.short_code
+    Url.delete().where(Url.id == url_id).execute()
+    delete_short_link(short_code)
 
     logger.info("url deleted id=%s", url_id)
     return ("", 204)
@@ -184,10 +211,21 @@ def delete_url(url_id):
 
 @urls_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_url(short_code):
-    try:
-        url_entry = Url.get(Url.short_code == short_code)
-    except Url.DoesNotExist:
-        return jsonify(error="Short URL not found"), 404
+    cached = get_short_link(short_code)
+    if cached is not None:
+        url_entry = SimpleNamespace(
+            id=cached["id"],
+            short_code=cached["short_code"],
+            original_url=cached["original_url"],
+            is_active=cached["is_active"],
+            user_id=cached.get("user_id"),
+        )
+    else:
+        try:
+            url_entry = Url.get(Url.short_code == short_code)
+        except Url.DoesNotExist:
+            return jsonify(error="Short URL not found"), 404
+        set_short_link(url_entry)
 
     if not url_entry.is_active:
         return jsonify(error="Short URL is inactive"), 410

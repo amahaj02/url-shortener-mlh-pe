@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request
 from peewee import InterfaceError, OperationalError
 import psutil
 
+from app.cache import init_cache
 from app.database import close_db, connect_db, db, init_db
 from app.logging_config import configure_logging
 from app.routes import register_routes
@@ -47,6 +48,8 @@ def create_app(testing=None):
     if app.config["AUTO_CREATE_TABLES"]:
         db.create_tables(ALL_MODELS, safe=True)
     close_db()
+
+    init_cache(app)
 
     if not effective_testing:
         db_optional_endpoints = {"health", "metrics"}
