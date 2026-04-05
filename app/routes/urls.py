@@ -97,7 +97,15 @@ def create_url():
             "original_url": url_entry.original_url,
         },
     )
-    logger.info("url created id=%s short_code=%s", url_entry.id, url_entry.short_code)
+    logger.info(
+        "url_created",
+        extra={
+            "component": "urls",
+            "url_id": url_entry.id,
+            "user_id": user_id,
+            "short_code": url_entry.short_code,
+        },
+    )
 
     set_short_link(url_entry)
 
@@ -187,7 +195,15 @@ def update_url(url_id):
             "title": url_entry.title,
         },
     )
-    logger.info("url updated id=%s", url_id)
+    logger.info(
+        "url_updated",
+        extra={
+            "component": "urls",
+            "url_id": url_id,
+            "user_id": _resolve_user_id(url_entry),
+            "is_active": url_entry.is_active,
+        },
+    )
 
     set_short_link(url_entry)
 
@@ -205,7 +221,10 @@ def delete_url(url_id):
     Url.delete().where(Url.id == url_id).execute()
     delete_short_link(short_code)
 
-    logger.info("url deleted id=%s", url_id)
+    logger.info(
+        "url_deleted",
+        extra={"component": "urls", "url_id": url_id, "short_code": short_code},
+    )
     return ("", 204)
 
 
@@ -241,6 +260,16 @@ def redirect_short_url(short_code):
             "user_agent": request.user_agent.string,
         },
         immediate=True,
+    )
+
+    logger.info(
+        "short_url_redirect",
+        extra={
+            "component": "urls",
+            "url_id": url_entry.id,
+            "short_code": url_entry.short_code,
+            "cache_hit": cached is not None,
+        },
     )
 
     return redirect(url_entry.original_url, code=302)

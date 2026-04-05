@@ -90,9 +90,12 @@ def enqueue(url_id: int | None, user_id: int | None, event_type: str, details: d
             d = _dropped
         if d == 1 or d % 100 == 0:
             logger.warning(
-                "event queue full; dropped %s events (queue_max=%s)",
-                d,
-                QUEUE_MAX,
+                "event_queue_drop",
+                extra={
+                    "component": "event_pipeline",
+                    "dropped_events": d,
+                    "queue_max": QUEUE_MAX,
+                },
             )
 
 
@@ -117,6 +120,7 @@ def _flush_items(items: list[tuple[int | None, int | None, str, dict[str, Any]]]
         return
     now = datetime.utcnow()
     rows = []
+    started = time.perf_counter()
     for url_id, user_id, event_type, details in items:
         rows.append(
             {
@@ -129,8 +133,24 @@ def _flush_items(items: list[tuple[int | None, int | None, str, dict[str, Any]]]
         )
     try:
         _insert_batch_sync(rows)
+        duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
+        if len(rows) > 1 or duration_ms >= 100.0:
+            logger.info(
+                "event_batch_flushed",
+                extra={
+                    "component": "event_pipeline",
+                    "batch_size": len(rows),
+                    "duration_ms": duration_ms,
+                },
+            )
     except Exception:
-        logger.exception("event batch insert failed (%s rows)", len(rows))
+        logger.exception(
+            "event_batch_flush_failed",
+            extra={
+                "component": "event_pipeline",
+                "batch_size": len(rows),
+            },
+        )
 
 
 def _shutdown() -> None:
@@ -145,5 +165,11 @@ def _shutdown() -> None:
             except queue.Empty:
                 break
     if pending:
-        logger.info("flushing %s pending events on shutdown", len(pending))
+        logger.info(
+            "event_shutdown_flush",
+            extra={
+                "component": "event_pipeline",
+                "pending_events": len(pending),
+            },
+        )
         _flush_items(pending)
