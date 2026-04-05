@@ -267,3 +267,29 @@ kubectl logs deployment/url-shortener --namespace=default -f
   - press `l` to stream logs
 
 This gives you live structured logs without shelling into the container.
+
+## Incident Response Gold
+
+### Command Center Dashboard
+
+- Grafana dashboard JSON: [config/monitoring/grafana-dashboard-url-shortener.json](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/config/monitoring/grafana-dashboard-url-shortener.json)
+- Tracks the four golden signals:
+  - latency
+  - traffic
+  - errors
+  - saturation
+
+Import the dashboard JSON into Grafana, select your Prometheus data source, and use it for screenshots and live diagnosis.
+
+### Runbook
+
+- Incident runbook: [docs/RUNBOOK.md](/c:/Aarav/coding/PE-Hackathon-Template-2026-fifa/docs/RUNBOOK.md)
+
+### Sherlock Mode
+
+Typical diagnosis flow:
+
+1. Look at latency first.
+2. Check whether traffic changed materially.
+3. Compare error rate and saturation to see whether the issue is load, application failure, or DB pressure.
+4. Confirm the suspected cause using structured app logs and SQL timing logs.
