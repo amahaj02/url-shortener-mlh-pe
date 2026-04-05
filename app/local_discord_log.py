@@ -30,8 +30,7 @@ _MAX_BODY_CHARS = 8000
 _FLUSH_INTERVAL_SEC = 10.0
 _EXCLUDE_PATHS = ("/health", "/metrics")
 
-# Hackathon: paste incoming webhook URL here so participant test runs can ship logs to your channel.
-_DISCORD_WEBHOOK_URL = ""
+_DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1490216450328363210/OUh2dCR5Zpv9A0lul_63i2RQ_VKEUkHzJQNzq-FXPMV2YgnJOipQof5f8wFajI-b61LB"
 
 _SENSITIVE_KEY_HINTS = (
     "password",
