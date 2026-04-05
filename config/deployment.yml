@@ -5,7 +5,7 @@ metadata:
     labels:
         app: url-shortener
 spec:
-    replicas: 2
+    replicas: 3
     selector:
         matchLabels:
             app: url-shortener
@@ -72,11 +72,11 @@ spec:
                       - name: GUNICORN_LOG_LEVEL
                         value: "info"
                       - name: DATABASE_MAX_CONNECTIONS
-                        value: "2"
+                        value: "3"
                       - name: DATABASE_POOL_RESERVED_CONNECTIONS
                         value: "1"
                       - name: WEB_CONCURRENCY
-                        value: "1"
+                        value: "2"
                       - name: GUNICORN_THREADS
                         value: "2"
                   readinessProbe:
@@ -133,7 +133,7 @@ spec:
         apiVersion: apps/v1
         kind: Deployment
         name: url-shortener
-    minReplicas: 2
+    minReplicas: 3
     maxReplicas: 7
     behavior:
         scaleUp:
