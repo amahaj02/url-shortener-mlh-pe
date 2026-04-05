@@ -80,6 +80,37 @@ This is the short list of environment variables and deploy-time settings that ma
 | --- | --- |
 | `PROMETHEUS_NAMESPACE` | Prefix for Prometheus metric names |
 
+## CI/CD Secrets
+
+These values are supplied through GitHub Actions secrets rather than committed in the repo:
+
+| Secret | Purpose |
+| --- | --- |
+| `DIGITALOCEAN_ACCESS_TOKEN` | Auth for `doctl` and registry/cluster access |
+| `REGISTRY_NAME` | DigitalOcean registry path used for image push |
+| `CLUSTER_NAME` | Target Kubernetes cluster name |
+| `K8S_ENV_FILE` | App environment file rendered into the `url-shortener-env` secret |
+| `LETSENCRYPT_EMAIL` | Contact email rendered into `config/letsencrypt-issuer.yml` at deploy time |
+
+## Ingress And TLS
+
+The current public app entrypoint is defined by:
+
+- `config/app-ingress.yml`
+- `config/letsencrypt-issuer.yml`
+
+Current public hostname:
+
+- `fifaurlshortener.duckdns.org`
+
+Monitoring ingress is defined separately in:
+
+- `config/monitoring/monitoring-ingress.yml`
+
+The Prometheus ingress also expects this cluster secret to exist:
+
+- `prometheus-basic-auth` in namespace `monitoring`
+
 ## Kubernetes Deployment Defaults
 
 The cluster deployment currently overrides some values directly in `config/deployment.yml`, including:
@@ -92,3 +123,13 @@ The cluster deployment currently overrides some values directly in `config/deplo
 - `GUNICORN_THREADS=7`
 - `DATABASE_MAX_CONNECTIONS=7` (Postgres 25 total / 3 reserved → 22 app budget; `3×1×7=21` at max replicas; see [capacity-plan.md](./capacity-plan.md))
 - HPA `minReplicas=2`, `maxReplicas=3`; per-pod resources per `config/deployment.yml` (see [capacity-plan.md](./capacity-plan.md))
+
+## Repo-Managed Kubernetes Manifests
+
+The workflow currently applies these repo-managed manifests:
+
+- `config/deployment.yml`
+- `config/monitoring/url-shortener-monitoring.yml`
+- `config/letsencrypt-issuer.yml`
+- `config/app-ingress.yml`
+- `config/monitoring/monitoring-ingress.yml`

@@ -48,6 +48,48 @@ Fix:
 - restart the Grafana pod first
 - if that is not enough, inspect the persistence layer because the issue is inside Grafana's own SQLite store, not the app
 
+## HTTPS ingress returned nginx `503`
+
+Symptom:
+
+- `https://fifaurlshortener.duckdns.org` answered from nginx, but requests returned `503 Service Temporarily Unavailable`
+
+Fix:
+
+- the ingress backend was initially pointed at the app container port instead of the Kubernetes Service port
+- `config/app-ingress.yml` was corrected to use `url-shortener-service` on port `80`
+- once the ingress routed to the Service port, `/health` returned `200` over HTTPS
+
+What to check if this happens again:
+
+- `kubectl get svc url-shortener-service -n default -o yaml`
+- `kubectl get endpoints url-shortener-service -n default`
+- `kubectl describe ingress url-shortener-ingress -n default`
+
+Rule of thumb:
+
+- ingress points to the Service port
+- the Service points to the pod target port
+
+## Let's Encrypt certificate would not issue
+
+Symptom:
+
+- `CertificateRequest` existed, but the `ClusterIssuer` stayed `Ready=False`
+
+Fix:
+
+- the ACME contact email was initially set to an `example.com` placeholder, which Let's Encrypt rejects
+- the issuer was updated with a real email address
+- the deploy workflow now renders the email from the `LETSENCRYPT_EMAIL` GitHub secret instead of committing it to the repo
+
+What to check if issuance stalls:
+
+- `kubectl get clusterissuer`
+- `kubectl describe clusterissuer letsencrypt-http`
+- `kubectl get certificate -n default`
+- `kubectl get challenge -A`
+
 ## Coverage run blocked on Windows
 
 Symptom:
