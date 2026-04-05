@@ -119,6 +119,42 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     assert events[-1].to_dict()["details"]["ip_address"] == "203.0.113.1"
 
 
+def test_redirect_click_uses_first_x_forwarded_for_hop(client, test_db):
+    user = User.create(username="xff-chain", email="xff-chain@example.com")
+    url_entry = Url.create(
+        user=user,
+        short_code="xff01",
+        original_url="https://example.com/xff",
+        is_active=True,
+    )
+
+    response = client.get(
+        f"/{url_entry.short_code}",
+        headers={"X-Forwarded-For": "198.51.100.2, 203.0.113.1, 10.0.0.1"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    click = Event.select().where(Event.event_type == "click").get()
+    assert click.to_dict()["details"]["ip_address"] == "198.51.100.2"
+
+
+def test_create_url_whitespace_only_title_becomes_null(client, test_db):
+    user = User.create(username="blank-title", email="blank-title@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/blank-title",
+            "title": "   \t  ",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["title"] is None
+
+
 def test_list_urls_filters_by_is_active(client, test_db):
     user = User.create(username="active-filter", email="active-filter@example.com")
     active_url = Url.create(user=user, short_code="af1", original_url="https://example.com/a", is_active=True)
@@ -131,6 +167,22 @@ def test_list_urls_filters_by_is_active(client, test_db):
     short_codes = {item["short_code"] for item in payload}
     assert active_url.short_code in short_codes
     assert inactive_url.short_code not in short_codes
+
+
+def test_list_urls_accepts_is_active_one_and_zero(client, test_db):
+    user = User.create(username="ia10", email="ia10@example.com")
+    active_url = Url.create(user=user, short_code="ia1a", original_url="https://example.com/ia", is_active=True)
+    inactive_url = Url.create(user=user, short_code="ia1b", original_url="https://example.com/ib", is_active=False)
+
+    r1 = client.get("/urls?is_active=1")
+    assert r1.status_code == 200
+    assert active_url.short_code in {i["short_code"] for i in r1.get_json()}
+    assert inactive_url.short_code not in {i["short_code"] for i in r1.get_json()}
+
+    r0 = client.get("/urls?is_active=0")
+    assert r0.status_code == 200
+    assert inactive_url.short_code in {i["short_code"] for i in r0.get_json()}
+    assert active_url.short_code not in {i["short_code"] for i in r0.get_json()}
 
 
 def test_create_url_returns_404_when_user_does_not_exist(client, test_db):
@@ -296,7 +348,7 @@ def test_create_url_rejects_non_numeric_user_id_string(client, test_db):
     assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
 
 
-def test_create_url_accepts_numeric_string_user_id(client, test_db):
+def test_create_url_rejects_string_user_id(client, test_db):
     user = User.create(username="strid2", email="strid2@example.com")
 
     response = client.post(
@@ -307,8 +359,21 @@ def test_create_url_accepts_numeric_string_user_id(client, test_db):
         },
     )
 
-    assert response.status_code == 201
-    assert response.get_json()["user_id"] == user.id
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
+
+
+def test_create_url_rejects_boolean_user_id(client, test_db):
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": True,
+            "original_url": "https://example.com/x",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["errors"]["user_id"] == "user_id must be an integer"
 
 
 def test_create_url_rejects_non_string_title(client, test_db):
@@ -371,6 +436,23 @@ def test_update_user_rejects_extra_unknown_fields(client, test_db):
 
     assert response.status_code == 400
     assert "Only username and email" in response.get_json()["errors"]["payload"]
+
+
+def test_create_url_rejects_unknown_payload_fields(client, test_db):
+    user = User.create(username="strict-create", email="strict-create@example.com")
+
+    response = client.post(
+        "/urls",
+        json={
+            "user_id": user.id,
+            "original_url": "https://example.com/strict",
+            "title": "ok",
+            "details": {"oops": 1},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Only user_id" in response.get_json()["errors"]["payload"]
 
 
 def test_update_url_rejects_extra_unknown_fields(client, test_db):
@@ -474,6 +556,24 @@ def test_create_event_returns_201(client, test_db):
     assert payload["event_type"] == "click"
     assert payload["url_id"] == url_entry.id
     assert payload["user_id"] == user.id
+
+
+def test_create_event_accepts_null_details_as_empty_object(client, test_db):
+    user = User.create(username="null-det", email="null-det@example.com")
+    url_entry = Url.create(user=user, short_code="nul01", original_url="https://example.com/nul", is_active=True)
+
+    response = client.post(
+        "/events",
+        json={
+            "url_id": url_entry.id,
+            "user_id": user.id,
+            "event_type": "click",
+            "details": None,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["details"] == {}
 
 
 def test_create_event_rejects_json_boolean_disguised_as_integer_ids(client, test_db):

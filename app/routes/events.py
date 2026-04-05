@@ -50,7 +50,12 @@ def create_event():
     url_id = payload.get("url_id")
     user_id = payload.get("user_id")
     event_type = payload.get("event_type")
-    details = payload.get("details", {})
+    if "details" in payload:
+        details = payload["details"]
+        if details is None:
+            details = {}
+    else:
+        details = {}
 
     errors = {}
     if url_id is not None and not _is_strict_json_int(url_id):
