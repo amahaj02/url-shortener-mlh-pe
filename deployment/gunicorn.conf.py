@@ -12,18 +12,28 @@ def _int_env(name, default):
         return default
 
 
+def _env_bool(name, default):
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 cpu_count = os.cpu_count() or 2
 db_pool_size = max(1, _int_env("DATABASE_MAX_CONNECTIONS", 20))
 db_reserved = max(0, _int_env("DATABASE_POOL_RESERVED_CONNECTIONS", 0))
 db_reserved = min(db_reserved, db_pool_size)
 # Peewee opens a pool per Gunicorn worker process; threads in that worker share it.
-# Cap threads per worker so concurrent handlers do not exceed pool slots (minus reserved).
+# Default: cap threads so concurrent DB users do not exceed pool slots (minus reserved).
+# Optional: allow more threads than pool when many requests avoid DB (e.g. Redis-first redirect);
+# DB-bound handlers wait on the pool (DATABASE_POOL_WAIT_TIMEOUT_SECONDS).
 per_worker_budget = max(1, db_pool_size - db_reserved)
 
 workers = max(1, _int_env("WEB_CONCURRENCY", min(4, cpu_count)))
 threads = max(1, _int_env("GUNICORN_THREADS", 4))
 
-if threads > per_worker_budget:
+cap_threads_to_pool = _env_bool("GUNICORN_THREADS_CAP_TO_POOL", True)
+if cap_threads_to_pool and threads > per_worker_budget:
     threads = max(1, per_worker_budget)
 
 bind = os.getenv("GUNICORN_BIND", "0.0.0.0:3000")

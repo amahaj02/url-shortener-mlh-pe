@@ -83,6 +83,8 @@ spec:
               value: "1"
             - name: GUNICORN_THREADS
               value: "7"
+            - name: GUNICORN_THREADS_CAP_TO_POOL
+              value: "false"
           readinessProbe:
             httpGet:
               path: /health

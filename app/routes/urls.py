@@ -1,12 +1,13 @@
 import logging
 import os
 from datetime import datetime
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError, fn
 
-from app.cache import delete_short_link, get_short_link, set_short_link
+from app.cache import delete_short_link, enabled, get_short_link, set_short_link
 from app.database import db
 from app.json_request import require_json_object
 from app.models.event import Event
@@ -322,8 +323,48 @@ def delete_url(url_id):
 
 @redirect_bp.route("/<string:short_code>", methods=["GET"])
 def redirect_short_url(short_code):
-    """Resolve redirects from the database so is_active is never stale vs Redis."""
+    """302 redirect. Prefer warm Redis (no DB read) so redirect load can use CPU without pool waits."""
     lookup = short_code.lower()
+
+    if enabled():
+        cached = get_short_link(lookup)
+        if cached is not None:
+            if not cached.get("is_active"):
+                return jsonify({"error": "URL not found"}), 404
+            destination = cached.get("original_url")
+            if destination:
+                url_entry = SimpleNamespace(
+                    id=cached["id"],
+                    short_code=cached["short_code"],
+                    original_url=destination,
+                    user_id=cached.get("user_id"),
+                    is_active=True,
+                )
+                Event.create_event(
+                    url=url_entry,
+                    user=_resolve_user_id(url_entry),
+                    event_type="click",
+                    details={
+                        "short_code": url_entry.short_code,
+                        "original_url": destination,
+                        "ip_address": _event_client_ip(),
+                        "user_agent": request.headers.get("User-Agent")
+                        or (request.user_agent.string if request.user_agent else "")
+                        or "",
+                    },
+                )
+                logger.info(
+                    "short_url_redirect",
+                    extra={
+                        "component": "urls",
+                        "url_id": url_entry.id,
+                        "short_code": url_entry.short_code,
+                        "cache_hit": True,
+                        "redis_fast_path": True,
+                    },
+                )
+                return redirect(destination, code=302)
+
     try:
         url_entry = Url.get(fn.Lower(Url.short_code) == lookup)
     except Url.DoesNotExist:
@@ -365,6 +406,7 @@ def redirect_short_url(short_code):
             "url_id": getattr(url_entry, "id", None),
             "short_code": url_entry.short_code,
             "cache_hit": cache_hit,
+            "redis_fast_path": False,
         },
     )
 

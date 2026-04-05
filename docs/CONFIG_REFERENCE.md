@@ -28,12 +28,15 @@ This is the short list of environment variables and deploy-time settings that ma
 | `DATABASE_STALE_TIMEOUT_SECONDS` | Pool stale timeout |
 | `DATABASE_POOL_WAIT_TIMEOUT_SECONDS` | Pool wait timeout |
 
+**Managed connection pool (e.g. PgBouncer, DigitalOcean “Connection pools”):** set `DATABASE_HOST` / `DATABASE_PORT` to the **pool** endpoint from the provider, not the direct database host. TLS and credentials are usually the same pattern as direct access. The pooler multiplexes app connections so you can often **raise `DATABASE_MAX_CONNECTIONS`** per worker within the pool’s **client** connection limit; the Postgres **`max_connections`** limit applies to connections *from* the pooler to the server, not to each app pod separately.
+
 ## Gunicorn
 
 | Variable | Purpose |
 | --- | --- |
 | `WEB_CONCURRENCY` | Worker count |
 | `GUNICORN_THREADS` | Threads per worker |
+| `GUNICORN_THREADS_CAP_TO_POOL` | Default `true`: limit threads to `DATABASE_MAX_CONNECTIONS − reserved`. Set `false` so more threads share the same pool (DB-bound requests wait on the pool; useful with Redis-first traffic). |
 | `GUNICORN_TIMEOUT` | Hard request timeout |
 | `GUNICORN_KEEPALIVE` | Keepalive |
 | `GUNICORN_GRACEFUL_TIMEOUT` | Graceful shutdown timeout |

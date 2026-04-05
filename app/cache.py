@@ -35,7 +35,8 @@ def _testing() -> bool:
 
 
 def _key(short_code: str) -> str:
-    return f"{KEY_PREFIX}{short_code}"
+    """Keys are lowercased so /AbC and /abc resolve the same entry."""
+    return f"{KEY_PREFIX}{short_code.strip().lower()}"
 
 
 def _normalize_cached_is_active(value: Any) -> bool:
