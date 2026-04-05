@@ -1,11 +1,9 @@
 import logging
-import re
 from datetime import datetime
 from urllib.parse import urlparse
 
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, jsonify, redirect, request
 from peewee import IntegrityError, fn
-from werkzeug.urls import iri_to_uri
 
 from app.cache import delete_short_link, get_short_link, set_short_link
 from app.database import db
@@ -67,9 +65,6 @@ def _is_user_fk_violation(error):
     return "foreign key" in message or "url_user_id_fkey" in message
 
 
-_CUSTOM_SHORT_CODE_RE = re.compile(r"^[A-Za-z0-9]{4,20}$")
-
-
 def _is_short_code_unique_violation(error):
     message = str(error).lower()
     return "short_code" in message and ("unique" in message or "duplicate" in message)
@@ -81,10 +76,10 @@ def create_url():
     if err:
         return err
 
-    allowed_create = {"user_id", "original_url", "title", "short_code"}
+    allowed_create = {"user_id", "original_url", "title"}
     if set(payload.keys()) - allowed_create:
         return jsonify(
-            errors={"payload": "Only user_id, original_url, title and short_code can be provided"},
+            errors={"payload": "Only user_id, original_url and title can be provided"},
         ), 400
 
     errors = {}
@@ -122,54 +117,30 @@ def create_url():
             set_short_link(existing)
         return jsonify(existing.to_dict()), 200
 
-    custom_short_code = None
-    short_code_errors = {}
-    if "short_code" in payload:
-        sc = payload["short_code"]
-        if not isinstance(sc, str):
-            short_code_errors["short_code"] = "must be a non-empty string"
-        else:
-            stripped_sc = sc.strip()
-            if not stripped_sc:
-                short_code_errors["short_code"] = "must be a non-empty string"
-            elif not _CUSTOM_SHORT_CODE_RE.fullmatch(stripped_sc):
-                short_code_errors["short_code"] = "must be 4-20 alphanumeric characters"
-            else:
-                custom_short_code = stripped_sc.lower()
-
-    if short_code_errors:
-        return jsonify(errors=short_code_errors), 400
-
-    if custom_short_code and Url.select().where(fn.Lower(Url.short_code) == custom_short_code).exists():
-        return jsonify(errors={"short_code": "already taken"}), 400
-
     title = payload.get("title")
     try:
-        if custom_short_code:
-            url_entry = Url.create(
-                user=user_id,
-                original_url=stripped_url,
-                title=_normalize_title(title) if title is not None else None,
-                is_active=True,
-                short_code=custom_short_code,
-            )
-        else:
-            url_entry = Url.create(
-                user=user_id,
-                original_url=stripped_url,
-                title=_normalize_title(title) if title is not None else None,
-                is_active=True,
-            )
+        url_entry = Url.create(
+            user=user_id,
+            original_url=stripped_url,
+            title=_normalize_title(title) if title is not None else None,
+            is_active=True,
+        )
     except IntegrityError as error:
         if _is_user_fk_violation(error):
             return jsonify(error="User not found"), 404
-        if _is_short_code_unique_violation(error):
-            return jsonify(errors={"short_code": "already taken"}), 400
         return jsonify(errors={"url": "Could not create URL"}), 400
 
-    if not custom_short_code:
-        url_entry.short_code = Url.short_code_from_id(url_entry.id)
-        url_entry.save(only=[Url.short_code])
+    for _ in range(64):
+        url_entry.short_code = Url.generate_short_code()
+        try:
+            url_entry.save(only=[Url.short_code])
+            break
+        except IntegrityError as error:
+            if _is_short_code_unique_violation(error):
+                continue
+            return jsonify(errors={"url": "Could not create URL"}), 400
+    else:
+        return jsonify(errors={"url": "Could not create URL"}), 400
 
     Event.create_event(
         url=url_entry,
@@ -370,6 +341,4 @@ def redirect_short_url(short_code):
         },
     )
 
-    response = make_response("", 302)
-    response.headers["Location"] = iri_to_uri(destination)
-    return response
+    return redirect(destination, code=302)

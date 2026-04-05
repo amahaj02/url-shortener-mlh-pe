@@ -1,3 +1,5 @@
+import secrets
+import string
 from datetime import datetime
 
 from peewee import AutoField, BooleanField, CharField, DateTimeField, ForeignKeyField, TextField
@@ -9,12 +11,17 @@ SHORT_CODE_ALPHABET = (
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 
+_SHORT_CODE_CHARS = string.ascii_letters + string.digits
+DEFAULT_SHORT_CODE_LENGTH = 6
+
 
 class Url(BaseModel):
     class Meta:
         indexes = (
             (("user", "id"), False),
         )
+
+    DEFAULT_SHORT_CODE_LENGTH = DEFAULT_SHORT_CODE_LENGTH
 
     id = AutoField()
     user = ForeignKeyField(User, backref="urls", on_delete="CASCADE")
@@ -24,6 +31,16 @@ class Url(BaseModel):
     is_active = BooleanField(default=True)
     created_at = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
+
+    @classmethod
+    def generate_short_code(cls, length=DEFAULT_SHORT_CODE_LENGTH):
+        """Return a unique random alphanumeric short code (default length 6)."""
+        while True:
+            code = "".join(secrets.choice(_SHORT_CODE_CHARS) for _ in range(length))
+            if code.isdigit():
+                continue
+            if not cls.select().where(cls.short_code == code).exists():
+                return code
 
     @classmethod
     def short_code_from_id(cls, row_id):

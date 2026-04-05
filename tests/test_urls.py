@@ -13,6 +13,15 @@ def test_is_valid_url_accepts_http_and_https_only():
     assert not _is_valid_url("example.com")
 
 
+def test_generate_short_code_is_unique_alphanumeric_six_chars(test_db):
+    codes = {Url.generate_short_code() for _ in range(40)}
+    assert len(codes) == 40
+    for code in codes:
+        assert len(code) == Url.DEFAULT_SHORT_CODE_LENGTH
+        assert code.isalnum()
+        assert not code.isdigit()
+
+
 def test_short_code_from_id_is_deterministic_base62():
     assert Url.short_code_from_id(1) == "1"
     assert Url.short_code_from_id(10) == "A"

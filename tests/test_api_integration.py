@@ -86,7 +86,9 @@ def test_create_update_and_redirect_url_records_events(client, test_db):
     url_id = created_payload["id"]
     short_code = created_payload["short_code"]
     assert created_payload["title"] == "Start Here"
-    assert created_payload["short_code"] == Url.short_code_from_id(url_id)
+    assert len(short_code) == Url.DEFAULT_SHORT_CODE_LENGTH
+    assert all(c.isalnum() for c in short_code)
+    assert not short_code.isdigit()
 
     update_response = client.put(
         f"/urls/{url_id}",
@@ -198,7 +200,7 @@ def test_create_url_returns_404_when_user_does_not_exist(client, test_db):
     assert response.status_code == 404
     assert response.get_json() == {"error": "User not found"}
 
-def test_create_url_short_code_is_generated_from_row_id(client, test_db):
+def test_create_url_short_code_is_random_six_alphanumeric(client, test_db):
     user = User.create(username="deterministic-owner", email="deterministic-owner@example.com")
 
     response = client.post(
@@ -212,29 +214,10 @@ def test_create_url_short_code_is_generated_from_row_id(client, test_db):
 
     assert response.status_code == 201
     payload = response.get_json()
-    assert payload["short_code"] == Url.short_code_from_id(payload["id"])
-
-
-def test_create_url_accepts_custom_short_code_and_redirects(client, test_db):
-    user = User.create(username="custom-slug", email="custom-slug@example.com")
-
-    create = client.post(
-        "/urls",
-        json={
-            "user_id": user.id,
-            "original_url": "https://example.com/branded",
-            "short_code": "myCustom",
-        },
-    )
-
-    assert create.status_code == 201
-    body = create.get_json()
-    assert body["short_code"] == "mycustom"
-
-    for path in ("/mycustom", "/myCustom", "/MYCUSTOM"):
-        redirect = client.get(path, follow_redirects=False)
-        assert redirect.status_code == 302
-        assert redirect.headers["Location"] == "https://example.com/branded"
+    code = payload["short_code"]
+    assert len(code) == Url.DEFAULT_SHORT_CODE_LENGTH
+    assert all(c.isalnum() for c in code)
+    assert not code.isdigit()
 
 
 def test_redirect_short_code_case_insensitive_for_stored_code(client, test_db):
@@ -262,63 +245,6 @@ def test_redirect_location_header_percent_encodes_unicode_destination(client, te
     response = client.get("/iri01", follow_redirects=False)
     assert response.status_code == 302
     assert response.headers["Location"] == "https://example.com/caf%C3%A9"
-
-
-def test_create_url_rejects_short_code_too_short(client, test_db):
-    user = User.create(username="short-code-len", email="short-code-len@example.com")
-
-    response = client.post(
-        "/urls",
-        json={
-            "user_id": user.id,
-            "original_url": "https://example.com/x",
-            "short_code": "abc",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()["errors"]["short_code"] == "must be 4-20 alphanumeric characters"
-
-
-def test_create_url_rejects_non_alphanumeric_short_code(client, test_db):
-    user = User.create(username="bad-chars", email="bad-chars@example.com")
-
-    response = client.post(
-        "/urls",
-        json={
-            "user_id": user.id,
-            "original_url": "https://example.com/x",
-            "short_code": "bad-code",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()["errors"]["short_code"] == "must be 4-20 alphanumeric characters"
-
-
-def test_create_url_rejects_taken_custom_short_code(client, test_db):
-    u1 = User.create(username="owner-one", email="owner-one@example.com")
-    u2 = User.create(username="owner-two", email="owner-two@example.com")
-    client.post(
-        "/urls",
-        json={
-            "user_id": u1.id,
-            "original_url": "https://example.com/first",
-            "short_code": "taken1",
-        },
-    )
-
-    response = client.post(
-        "/urls",
-        json={
-            "user_id": u2.id,
-            "original_url": "https://example.com/second",
-            "short_code": "TAKEN1",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()["errors"]["short_code"] == "already taken"
 
 
 def test_create_url_is_idempotent_for_same_user_and_original_url(client, test_db):
@@ -349,30 +275,6 @@ def test_create_url_is_idempotent_for_same_user_and_original_url(client, test_db
     assert second_body["short_code"] == first_body["short_code"]
     assert second_body["title"] == "First"
     assert Url.select().where(Url.user == user.id, Url.original_url == "https://example.com/same").count() == 1
-
-
-def test_create_url_idempotent_ignores_invalid_short_code_on_duplicate(client, test_db):
-    user = User.create(username="idem-sc", email="idem-sc@example.com")
-
-    first = client.post(
-        "/urls",
-        json={
-            "user_id": user.id,
-            "original_url": "https://example.com/idem-sc",
-        },
-    )
-    second = client.post(
-        "/urls",
-        json={
-            "user_id": user.id,
-            "original_url": "https://example.com/idem-sc",
-            "short_code": "no",  # too short — valid only if not duplicate
-        },
-    )
-
-    assert first.status_code == 201
-    assert second.status_code == 200
-    assert second.get_json()["id"] == first.get_json()["id"]
 
 
 def test_create_url_duplicate_inactive_returns_existing(client, test_db):
@@ -514,7 +416,7 @@ def test_two_creations_same_destination_are_idempotent(client, test_db):
     a, b = first.get_json(), second.get_json()
     assert a["id"] == b["id"]
     assert a["short_code"] == b["short_code"]
-    assert a["short_code"] == Url.short_code_from_id(a["id"])
+    assert len(a["short_code"]) == Url.DEFAULT_SHORT_CODE_LENGTH
 
 
 def test_create_url_rejects_non_numeric_user_id_string(client, test_db):
