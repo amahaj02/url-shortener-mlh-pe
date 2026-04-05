@@ -34,12 +34,14 @@ class Url(BaseModel):
 
     @classmethod
     def generate_short_code(cls, length=DEFAULT_SHORT_CODE_LENGTH):
-        """Return a unique random alphanumeric short code (default length 6)."""
+        """Return a random alphanumeric short code (default length 6), not all digits.
+
+        Uniqueness is enforced by the database unique constraint on ``short_code``;
+        callers must retry on unique violations (collisions are extremely rare).
+        """
         while True:
             code = "".join(secrets.choice(_SHORT_CODE_CHARS) for _ in range(length))
-            if code.isdigit():
-                continue
-            if not cls.select().where(cls.short_code == code).exists():
+            if not code.isdigit():
                 return code
 
     @classmethod

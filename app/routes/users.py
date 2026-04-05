@@ -150,18 +150,15 @@ def create_user():
     if errors:
         return jsonify(errors=errors), 400
 
+    username = payload["username"].strip()
+    email = payload["email"].strip()
+
     try:
-        user = User.create(
-            username=payload["username"].strip(),
-            email=payload["email"].strip(),
-        )
+        user = User.create(username=username, email=email)
     except IntegrityError:
         existing_user = (
             User.select()
-            .where(
-                (User.username == payload["username"].strip())
-                & (User.email == payload["email"].strip())
-            )
+            .where((User.username == username) & (User.email == email))
             .first()
         )
         if existing_user is not None:

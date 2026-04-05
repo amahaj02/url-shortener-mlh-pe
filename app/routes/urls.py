@@ -119,26 +119,24 @@ def create_url():
         return jsonify(existing.to_dict()), 200
 
     title = payload.get("title")
-    try:
-        url_entry = Url.create(
-            user=user_id,
-            original_url=stripped_url,
-            title=_normalize_title(title) if title is not None else None,
-            is_active=True,
-        )
-    except IntegrityError as error:
-        if _is_user_fk_violation(error):
-            return jsonify(error="User not found"), 404
-        return jsonify(errors={"url": "Could not create URL"}), 400
+    title_val = _normalize_title(title) if title is not None else None
 
     for _ in range(64):
-        url_entry.short_code = Url.generate_short_code()
+        code = Url.generate_short_code()
         try:
-            url_entry.save(only=[Url.short_code])
+            url_entry = Url.create(
+                user=user_id,
+                original_url=stripped_url,
+                title=title_val,
+                is_active=True,
+                short_code=code,
+            )
             break
         except IntegrityError as error:
             if _is_short_code_unique_violation(error):
                 continue
+            if _is_user_fk_violation(error):
+                return jsonify(error="User not found"), 404
             return jsonify(errors={"url": "Could not create URL"}), 400
     else:
         return jsonify(errors={"url": "Could not create URL"}), 400

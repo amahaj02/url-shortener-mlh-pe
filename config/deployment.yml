@@ -72,13 +72,13 @@ spec:
             - name: GUNICORN_LOG_LEVEL
               value: "info"
             - name: DATABASE_MAX_CONNECTIONS
-              value: "3"
+              value: "20"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
-              value: "1"
+              value: "0"
             - name: WEB_CONCURRENCY
               value: "2"
             - name: GUNICORN_THREADS
-              value: "2"
+              value: "10"
           readinessProbe:
             httpGet:
               path: /health

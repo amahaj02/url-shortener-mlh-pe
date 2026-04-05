@@ -13,7 +13,8 @@ This is a practical capacity note for the current hackathon build, not a promise
   - memory limit: `1200Mi`
 - Gunicorn per pod:
   - `WEB_CONCURRENCY=2`
-  - `GUNICORN_THREADS=2`
+  - `GUNICORN_THREADS=10` (capped per worker by `DATABASE_MAX_CONNECTIONS` in `deployment/gunicorn.conf.py`)
+  - `DATABASE_MAX_CONNECTIONS=20` per worker (≈ `workers × DATABASE_MAX_CONNECTIONS` DB conns per pod under load)
 
 ## Load-Test Entry Points
 

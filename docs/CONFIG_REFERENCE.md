@@ -24,7 +24,7 @@ This is the short list of environment variables and deploy-time settings that ma
 | `DATABASE_SSLMODE` | Managed Postgres TLS mode |
 | `DATABASE_CONNECT_TIMEOUT` | Connection timeout |
 | `DATABASE_MAX_CONNECTIONS` | Peewee pool size per worker |
-| `DATABASE_POOL_RESERVED_CONNECTIONS` | Reserved connection budget |
+| `DATABASE_POOL_RESERVED_CONNECTIONS` | Per worker: subtracted from pool before capping `GUNICORN_THREADS` |
 | `DATABASE_STALE_TIMEOUT_SECONDS` | Pool stale timeout |
 | `DATABASE_POOL_WAIT_TIMEOUT_SECONDS` | Pool wait timeout |
 
@@ -89,5 +89,5 @@ The cluster deployment currently overrides some values directly in `config/deplo
 - `PORT=8000`
 - `GUNICORN_BIND=0.0.0.0:8000`
 - `WEB_CONCURRENCY=2`
-- `GUNICORN_THREADS=2`
-- `DATABASE_MAX_CONNECTIONS=3`
+- `GUNICORN_THREADS=10`
+- `DATABASE_MAX_CONNECTIONS=20`
