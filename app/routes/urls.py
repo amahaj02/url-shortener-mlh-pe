@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -168,6 +169,12 @@ def create_url():
 
 @urls_bp.route("/urls", methods=["GET"])
 def list_urls():
+    if os.getenv("PE_DEBUG_LIST_URLS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        logger.info(
+            "list_urls_request",
+            extra={"component": "urls", "args": dict(request.args)},
+        )
+
     query = Url.select().order_by(Url.id)
 
     user_id = request.args.get("user_id")
@@ -186,6 +193,28 @@ def list_urls():
                 errors={"is_active": "must be true, false, 1, or 0"},
             ), 400
         query = query.where(Url.is_active == normalized)
+
+    short_code_arg = request.args.get("short_code")
+    if short_code_arg is not None and str(short_code_arg).strip():
+        query = query.where(fn.Lower(Url.short_code) == str(short_code_arg).strip().lower())
+
+    page = request.args.get("page", type=int)
+    per_page = request.args.get("per_page", type=int)
+    if page is not None and per_page is not None:
+        if page < 1 or per_page < 1:
+            return jsonify(
+                errors={"pagination": "page and per_page must be positive integers"},
+            ), 400
+        total = query.count()
+        page_rows = query.paginate(page, per_page)
+        return jsonify(
+            {
+                "urls": [u.to_dict() for u in page_rows],
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+            },
+        )
 
     return jsonify([url_entry.to_dict() for url_entry in query.iterator()])
 

@@ -187,6 +187,77 @@ def test_list_urls_accepts_is_active_one_and_zero(client, test_db):
     assert active_url.short_code not in {i["short_code"] for i in r0.get_json()}
 
 
+def test_list_urls_filters_by_short_code(client, test_db):
+    user = User.create(username="sc-filter", email="sc-filter@example.com")
+    Url.create(user=user, short_code="scOne1", original_url="https://example.com/one", is_active=True)
+    Url.create(user=user, short_code="scTwo2", original_url="https://example.com/two", is_active=True)
+
+    r = client.get("/urls?short_code=scOne1")
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert payload[0]["short_code"] == "scOne1"
+
+    r_ci = client.get("/urls?short_code=SCONE1")
+    assert r_ci.status_code == 200
+    assert len(r_ci.get_json()) == 1
+
+
+def test_list_urls_plain_array_when_only_page_or_only_per_page(client, test_db):
+    user = User.create(username="pg-partial", email="pg-partial@example.com")
+    for i in range(3):
+        Url.create(
+            user=user,
+            short_code=f"pp{i:02d}X",
+            original_url=f"https://example.com/p{i}",
+            is_active=True,
+        )
+
+    r_page_only = client.get("/urls?page=1")
+    assert r_page_only.status_code == 200
+    assert isinstance(r_page_only.get_json(), list)
+    assert len(r_page_only.get_json()) == 3
+
+
+def test_list_urls_paginated_envelope(client, test_db):
+    user = User.create(username="pg-user", email="pg-user@example.com")
+    for i in range(25):
+        Url.create(
+            user=user,
+            short_code=f"pg{i:02d}z",
+            original_url=f"https://example.com/u{i}",
+            is_active=True,
+        )
+
+    r1 = client.get("/urls?user_id=%s&page=1&per_page=10" % user.id)
+    assert r1.status_code == 200
+    body1 = r1.get_json()
+    assert body1["page"] == 1
+    assert body1["per_page"] == 10
+    assert body1["total"] == 25
+    assert len(body1["urls"]) == 10
+
+    r2 = client.get("/urls?user_id=%s&page=2&per_page=10" % user.id)
+    body2 = r2.get_json()
+    assert body2["page"] == 2
+    assert len(body2["urls"]) == 10
+
+    r3 = client.get("/urls?user_id=%s&page=3&per_page=10" % user.id)
+    body3 = r3.get_json()
+    assert len(body3["urls"]) == 5
+    assert body3["total"] == 25
+
+
+def test_list_urls_pagination_invalid_returns_400(client, test_db):
+    r = client.get("/urls?page=0&per_page=10")
+    assert r.status_code == 400
+    assert "pagination" in r.get_json()["errors"]
+
+    r2 = client.get("/urls?page=1&per_page=0")
+    assert r2.status_code == 400
+
+
 def test_create_url_returns_404_when_user_does_not_exist(client, test_db):
     response = client.post(
         "/urls",
