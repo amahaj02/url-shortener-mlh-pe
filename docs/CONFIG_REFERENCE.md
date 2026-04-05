@@ -88,6 +88,7 @@ The cluster deployment currently overrides some values directly in `config/deplo
 - `AUTO_CREATE_TABLES=false`
 - `PORT=8000`
 - `GUNICORN_BIND=0.0.0.0:8000`
-- `WEB_CONCURRENCY=2`
-- `GUNICORN_THREADS=10`
-- `DATABASE_MAX_CONNECTIONS=20`
+- `WEB_CONCURRENCY=1`
+- `GUNICORN_THREADS=7`
+- `DATABASE_MAX_CONNECTIONS=7` (Postgres 25 total / 3 reserved → 22 app budget; `3×1×7=21` at max replicas; see [capacity-plan.md](./capacity-plan.md))
+- HPA `minReplicas=2`, `maxReplicas=3`; per-pod resources per `config/deployment.yml` (see [capacity-plan.md](./capacity-plan.md))

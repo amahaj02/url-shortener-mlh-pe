@@ -4,17 +4,18 @@ This is a practical capacity note for the current hackathon build, not a promise
 
 ## Current Shape
 
-- Baseline deployment: 2 replicas (smaller per-pod CPU/memory; see `config/deployment.yml`)
-- Autoscaling range: 2 to 6 replicas
-- Per-pod request/limit (tune for your nodes; `config/deployment.yml`):
-  - CPU request: `500m`
-  - CPU limit: `900m`
-  - memory request: `384Mi`
-  - memory limit: `768Mi`
+- Baseline deployment: 2 replicas (see `config/deployment.yml`)
+- Autoscaling range: 2 to 3 replicas (HPA)
+- Per-pod request/limit (`config/deployment.yml`):
+  - CPU request: `1000m`
+  - CPU limit: `1800m`
+  - memory request: `768Mi`
+  - memory limit: `1536Mi`
+- Postgres: **25** `max_connections` cluster-wide, **3** reserved (maintenance) → **22** usable for the app (see `deployment.yml` env).
 - Gunicorn per pod:
-  - `WEB_CONCURRENCY=2`
-  - `GUNICORN_THREADS=10` (capped per worker by `DATABASE_MAX_CONNECTIONS` in `deployment/gunicorn.conf.py`)
-  - `DATABASE_MAX_CONNECTIONS=20` per worker (≈ `workers × DATABASE_MAX_CONNECTIONS` DB conns per pod under load)
+  - `WEB_CONCURRENCY=1` (one process per pod so pool size can be **7** and stay at or under 22 total: `3×1×7=21`)
+  - `GUNICORN_THREADS=7` (capped to Peewee pool in `deployment/gunicorn.conf.py`)
+  - `DATABASE_MAX_CONNECTIONS=7` per worker — **21** connections at HPA max; **1** left unused (22 is not divisible evenly across six pools from 3×2 workers, so we use 1×7 per pod instead of 2×3)
 
 ## Load-Test Entry Points
 

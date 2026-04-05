@@ -4,7 +4,7 @@ metadata:
   name: url-shortener
   labels:
     app: url-shortener
-  # Smaller per-pod requests/limits so more replicas can fit the cluster; HPA scales up to maxReplicas.
+  # Per-pod CPU/memory tuned for Gunicorn + Peewee; HPA min 2 / max 3 replicas.
   # Total DB conns ≈ replicas × WEB_CONCURRENCY × DATABASE_MAX_CONNECTIONS — tune pool if you change replicas.
 spec:
   replicas: 2
@@ -73,14 +73,16 @@ spec:
               value: "0"
             - name: GUNICORN_LOG_LEVEL
               value: "info"
+            # Postgres: 25 max_connections, 3 reserved → 22 app budget. Peak app conns = maxReplicas × WEB_CONCURRENCY × pool.
+            # 3×1×7=21 ≤ 22 (two workers per pod would cap floor(22/6)=3 → only 18 conns).
             - name: DATABASE_MAX_CONNECTIONS
-              value: "20"
+              value: "7"
             - name: DATABASE_POOL_RESERVED_CONNECTIONS
               value: "0"
             - name: WEB_CONCURRENCY
-              value: "2"
+              value: "1"
             - name: GUNICORN_THREADS
-              value: "10"
+              value: "7"
           readinessProbe:
             httpGet:
               path: /health
@@ -106,11 +108,11 @@ spec:
             failureThreshold: 8
           resources:
             requests:
-              cpu: "500m"
-              memory: 384Mi
-            limits:
-              cpu: "900m"
+              cpu: "1000m"
               memory: 768Mi
+            limits:
+              cpu: "1800m"
+              memory: 1536Mi
 ---
 apiVersion: v1
 kind: Service
@@ -144,7 +146,7 @@ spec:
     kind: Deployment
     name: url-shortener
   minReplicas: 2
-  maxReplicas: 6
+  maxReplicas: 3
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0

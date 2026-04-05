@@ -24,9 +24,9 @@ Current perf entrypoints:
 
 The quest log suggests Docker Compose plus Nginx. We met the same goal with the deployment setup we actually used:
 
-- Kubernetes `Deployment` with 3 replicas
+- Kubernetes `Deployment` with 2 baseline replicas (HPA up to 3)
 - DigitalOcean `LoadBalancer` service in front of the pods
-- HPA configured to scale between 3 and 7 replicas based on CPU
+- HPA configured to scale between 2 and 3 replicas based on CPU
 
 Why we used this instead:
 
