@@ -17,7 +17,7 @@ This service is designed to fail cleanly under common error scenarios and to rec
 - Response shape:
 
 ```json
-{"errors":{"payload":"JSON object required"}}
+{"errors":{"payload":"JSON body must be a JSON object (not null, an array, or a primitive)"}}
 ```
 
 ### Unknown route
@@ -41,7 +41,7 @@ This service is designed to fail cleanly under common error scenarios and to rec
 - Response shape:
 
 ```json
-{"error":"Short URL not found"}
+{"error":"Resource not found"}
 ```
 
 ### Inactive short code
